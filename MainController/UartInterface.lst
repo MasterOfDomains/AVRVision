@@ -1,0 +1,887 @@
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccnucDcp.s 			page 1
+
+
+   1               		.file	"UartInterface.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__tmp_reg__ = 0
+   6               	__zero_reg__ = 1
+   7               		.text
+   8               	.Ltext0:
+   9               		.cfi_sections	.debug_frame
+  10               	.global	UartInt_init
+  11               		.type	UartInt_init, @function
+  12               	UartInt_init:
+  13               	.LFB0:
+  14               		.file 1 "UartInterface.c"
+   1:UartInterface.c **** /*
+   2:UartInterface.c ****     Copyright (C) 2004    John Orlando
+   3:UartInterface.c ****     
+   4:UartInterface.c ****    AVRcam: a small real-time image processing engine.
+   5:UartInterface.c **** 
+   6:UartInterface.c ****     This program is free software; you can redistribute it and/or
+   7:UartInterface.c ****     modify it under the terms of the GNU General Public
+   8:UartInterface.c ****     License as published by the Free Software Foundation; either
+   9:UartInterface.c ****     version 2 of the License, or (at your option) any later version.
+  10:UartInterface.c **** 
+  11:UartInterface.c ****     This program is distributed in the hope that it will be useful,
+  12:UartInterface.c ****     but WITHOUT ANY WARRANTY; without even the implied warranty of
+  13:UartInterface.c ****     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  14:UartInterface.c ****     General Public License for more details.
+  15:UartInterface.c **** 
+  16:UartInterface.c ****     You should have received a copy of the GNU General Public
+  17:UartInterface.c ****     License along with this program; if not, write to the Free Software
+  18:UartInterface.c ****     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+  19:UartInterface.c **** 
+  20:UartInterface.c ****    For more information on the AVRcam, please contact:
+  21:UartInterface.c **** 
+  22:UartInterface.c ****    john@jrobot.net
+  23:UartInterface.c **** 
+  24:UartInterface.c ****    or go to www.jrobot.net for more details regarding the system.
+  25:UartInterface.c **** */
+  26:UartInterface.c **** /***********************************************************
+  27:UartInterface.c **** 	Module Name: UartInterface.c
+  28:UartInterface.c **** 	Module Date: 04/10/2004
+  29:UartInterface.c **** 	Module Auth: John Orlando
+  30:UartInterface.c **** 	
+  31:UartInterface.c **** 	Description: This module is responsible for providing an
+  32:UartInterface.c **** 	interface to the UART hardware available on the mega8.
+  33:UartInterface.c **** 	This interface is an interrupt-driven interface.
+  34:UartInterface.c ****     
+  35:UartInterface.c ****     Revision History:
+  36:UartInterface.c ****     Date        Rel Ver.    Notes
+  37:UartInterface.c ****     4/10/2004      0.1     Module created
+  38:UartInterface.c ****     6/30/2004      1.0     Initial release for Circuit Cellar
+  39:UartInterface.c ****                            contest.
+  40:UartInterface.c ****     11/15/2004     1.2     Updated UART baud rate regs so that
+  41:UartInterface.c ****                            it runs at 115.2 kbps when the input
+  42:UartInterface.c ****                            crystal is at 17.7 MHz (which is the
+  43:UartInterface.c ****                            speed of the OV6620's crystal).
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccnucDcp.s 			page 2
+
+
+  44:UartInterface.c ****     1/16/2005      1.4     Moved the serial received ISR to
+  45:UartInterface.c ****                            this file, instead of having it
+  46:UartInterface.c ****                            in its own UartInterfaceAsm.S file
+  47:UartInterface.c ****                            written in assembly.
+  48:UartInterface.c **** ***********************************************************/
+  49:UartInterface.c **** 
+  50:UartInterface.c **** /*	Includes */
+  51:UartInterface.c **** #include <avr/io.h>
+  52:UartInterface.c **** #include <avr/interrupt.h>
+  53:UartInterface.c **** #include <avr/signal.h>
+  54:UartInterface.c **** #include "CommonDefs.h"
+  55:UartInterface.c **** #include "UartInterface.h" 
+  56:UartInterface.c **** #include "UIMgr.h"
+  57:UartInterface.c **** #include "Executive.h"
+  58:UartInterface.c **** 
+  59:UartInterface.c **** /*  Local Variables */
+  60:UartInterface.c **** 
+  61:UartInterface.c **** /* 	Local Structures and Typedefs */
+  62:UartInterface.c **** 
+  63:UartInterface.c **** /*  Extern Variables */
+  64:UartInterface.c **** 
+  65:UartInterface.c **** /*  Definitions */
+  66:UartInterface.c **** 
+  67:UartInterface.c **** /***********************************************************
+  68:UartInterface.c **** 	Function Name: UartInt_init
+  69:UartInterface.c **** 	Function Description: This function is responsible for
+  70:UartInterface.c **** 	initializing the UART interface on the mega8.  This 
+  71:UartInterface.c **** 	interface is set to communicate at 115.2 Kbps, with an
+  72:UartInterface.c **** 	8N1 protocol.
+  73:UartInterface.c **** 	Inputs:  none
+  74:UartInterface.c **** 	Outputs: none
+  75:UartInterface.c **** ***********************************************************/	
+  76:UartInterface.c **** void UartInt_init(void)
+  77:UartInterface.c **** {	
+  15               		.loc 1 77 0
+  16               		.cfi_startproc
+  17               	/* prologue: function */
+  18               	/* frame size = 0 */
+  19               	/* stack size = 0 */
+  20               	.L__stack_usage = 0
+  78:UartInterface.c **** 	/* set up the baud rate registers so the UART will operate
+  79:UartInterface.c **** 	at 115.2 Kbps */
+  80:UartInterface.c **** 	UBRRH = 0x00;
+  21               		.loc 1 80 0
+  22 0000 10BC      		out 0x20,__zero_reg__
+  81:UartInterface.c **** 
+  82:UartInterface.c **** #ifdef NO_CRYSTAL    
+  83:UartInterface.c ****     UBRRL = 18;  /* 18 for double clocking at 115.2 kbps */
+  23               		.loc 1 83 0
+  24 0002 82E1      		ldi r24,lo8(18)
+  25 0004 89B9      		out 0x9,r24
+  84:UartInterface.c **** #else    
+  85:UartInterface.c **** 	UBRRL = 0x08;  /* for 16 MHz crystal at 115.2 kbps */
+  86:UartInterface.c **** #endif    
+  87:UartInterface.c **** 	
+  88:UartInterface.c **** 	/* enable the tx and rx capabilities of the UART...as well 
+  89:UartInterface.c **** 		as the receive complete interrupt */
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccnucDcp.s 			page 3
+
+
+  90:UartInterface.c **** 	UCSRB = (1<<RXCIE)|(1<<RXEN)|(1<<TXEN);	
+  26               		.loc 1 90 0
+  27 0006 88E9      		ldi r24,lo8(-104)
+  28 0008 8AB9      		out 0xa,r24
+  91:UartInterface.c **** 	
+  92:UartInterface.c **** 	/* set up the control registers so the UART works at 8N1 */
+  93:UartInterface.c **** 	UCSRC = (1<<URSEL)|(1<<UCSZ1)|(1<<UCSZ0);
+  29               		.loc 1 93 0
+  30 000a 86E8      		ldi r24,lo8(-122)
+  31 000c 80BD      		out 0x20,r24
+  94:UartInterface.c ****     
+  95:UartInterface.c **** #ifdef NO_CRYSTAL     
+  96:UartInterface.c ****     /* set the baud rate to use the double-speed */
+  97:UartInterface.c ****     UCSRA = (1<<U2X);
+  32               		.loc 1 97 0
+  33 000e 82E0      		ldi r24,lo8(2)
+  34 0010 8BB9      		out 0xb,r24
+  35 0012 0895      		ret
+  36               		.cfi_endproc
+  37               	.LFE0:
+  38               		.size	UartInt_init, .-UartInt_init
+  39               	.global	UartInt_txByte
+  40               		.type	UartInt_txByte, @function
+  41               	UartInt_txByte:
+  42               	.LFB1:
+  98:UartInterface.c **** #endif    
+  99:UartInterface.c **** 	
+ 100:UartInterface.c **** }
+ 101:UartInterface.c **** 
+ 102:UartInterface.c **** /***********************************************************
+ 103:UartInterface.c **** 	Function Name: UartInt_txByte
+ 104:UartInterface.c **** 	Function Description: This function is responsible for
+ 105:UartInterface.c **** 	transmitting a single byte on the uart.  
+ 106:UartInterface.c **** 	Inputs:  txByte - the byte to send
+ 107:UartInterface.c **** 	Outputs: none
+ 108:UartInterface.c **** 	NOTES: When the TX UDRE (data register empty) is set, there
+ 109:UartInterface.c **** 	is puposefully no interrupt...thus, to send a string of
+ 110:UartInterface.c **** 	data out, the calling routine needs to hold up the entire
+ 111:UartInterface.c **** 	application while this takes place (or just send one
+ 112:UartInterface.c **** 	byte at a time at strtegically timed intervals, like
+ 113:UartInterface.c **** 	the stats data is sent out :-)
+ 114:UartInterface.c **** ***********************************************************/
+ 115:UartInterface.c **** void UartInt_txByte(unsigned char txByte)
+ 116:UartInterface.c **** {
+  43               		.loc 1 116 0
+  44               		.cfi_startproc
+  45               	/* prologue: function */
+  46               	/* frame size = 0 */
+  47               	/* stack size = 0 */
+  48               	.L__stack_usage = 0
+  49               	.LVL0:
+  50               	.L3:
+ 117:UartInterface.c **** 	/* Wait for empty transmit buffer */
+ 118:UartInterface.c **** 	while ( !( UCSRA & (1<<UDRE)) );
+  51               		.loc 1 118 0 discriminator 1
+  52 0014 5D9B      		sbis 0xb,5
+  53 0016 00C0      		rjmp .L3
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccnucDcp.s 			page 4
+
+
+ 119:UartInterface.c **** 	/* Put data into buffer, sends the data */
+ 120:UartInterface.c **** 	UDR = txByte;
+  54               		.loc 1 120 0
+  55 0018 8CB9      		out 0xc,r24
+  56 001a 0895      		ret
+  57               		.cfi_endproc
+  58               	.LFE1:
+  59               		.size	UartInt_txByte, .-UartInt_txByte
+  60               	.global	__vector_11
+  61               		.type	__vector_11, @function
+  62               	__vector_11:
+  63               	.LFB2:
+ 121:UartInterface.c **** }
+ 122:UartInterface.c **** 
+ 123:UartInterface.c **** /***********************************************************
+ 124:UartInterface.c **** 	Function Name: SIG_UART_RECV ISR
+ 125:UartInterface.c **** 	Function Description: This function is responsible for
+ 126:UartInterface.c **** 	handling the interrupt caused when a data byte is 
+ 127:UartInterface.c ****     received by the UART.
+ 128:UartInterface.c **** 	Inputs:  none
+ 129:UartInterface.c **** 	Outputs: none
+ 130:UartInterface.c **** 	NOTES: This function was originally written in assembly,
+ 131:UartInterface.c ****     but moved over to C when the setting of the "T" bit at
+ 132:UartInterface.c ****     the end of the routine was no longer necessary (this
+ 133:UartInterface.c ****     theoretically allowed the AVRcam to respond to serial
+ 134:UartInterface.c ****     bytes in the middle of tracking or dumping a frame.
+ 135:UartInterface.c ****     But it wasn't really needed, and understanding the C
+ 136:UartInterface.c ****     is easier  :-)
+ 137:UartInterface.c **** ***********************************************************/
+ 138:UartInterface.c **** SIGNAL(USART_RXC_vect)
+ 139:UartInterface.c **** {
+  64               		.loc 1 139 0
+  65               		.cfi_startproc
+  66 001c 1F92      		push r1
+  67               	.LCFI0:
+  68               		.cfi_def_cfa_offset 3
+  69               		.cfi_offset 1, -2
+  70 001e 0F92      		push r0
+  71               	.LCFI1:
+  72               		.cfi_def_cfa_offset 4
+  73               		.cfi_offset 0, -3
+  74 0020 0FB6      		in r0,__SREG__
+  75 0022 0F92      		push r0
+  76 0024 1124      		clr __zero_reg__
+  77 0026 8F93      		push r24
+  78               	.LCFI2:
+  79               		.cfi_def_cfa_offset 5
+  80               		.cfi_offset 24, -4
+  81 0028 9F93      		push r25
+  82               	.LCFI3:
+  83               		.cfi_def_cfa_offset 6
+  84               		.cfi_offset 25, -5
+  85 002a EF93      		push r30
+  86               	.LCFI4:
+  87               		.cfi_def_cfa_offset 7
+  88               		.cfi_offset 30, -6
+  89 002c FF93      		push r31
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccnucDcp.s 			page 5
+
+
+  90               	.LCFI5:
+  91               		.cfi_def_cfa_offset 8
+  92               		.cfi_offset 31, -7
+  93               	/* prologue: Signal */
+  94               	/* frame size = 0 */
+  95               	/* stack size = 7 */
+  96               	.L__stack_usage = 7
+ 140:UartInterface.c ****     unsigned char tmpHead;
+ 141:UartInterface.c ****     /* read the data byte, put it in the serial queue, and
+ 142:UartInterface.c ****     post the event */
+ 143:UartInterface.c ****  
+ 144:UartInterface.c ****     UIMgr_rxFifo[UIMgr_rxFifoHead] = UDR;
+  97               		.loc 1 144 0
+  98 002e 8091 0000 		lds r24,UIMgr_rxFifoHead
+  99 0032 9CB1      		in r25,0xc
+ 100 0034 E82F      		mov r30,r24
+ 101 0036 F0E0      		ldi r31,0
+ 102 0038 E050      		subi r30,lo8(-(UIMgr_rxFifo))
+ 103 003a F040      		sbci r31,hi8(-(UIMgr_rxFifo))
+ 104 003c 9083      		st Z,r25
+ 105               	.LVL1:
+ 145:UartInterface.c **** 
+ 146:UartInterface.c ****     /* now move the head up */
+ 147:UartInterface.c ****     tmpHead = (UIMgr_rxFifoHead + 1) & (UI_MGR_RX_FIFO_MASK);
+ 148:UartInterface.c ****     UIMgr_rxFifoHead = tmpHead;
+ 106               		.loc 1 148 0
+ 107 003e 8F5F      		subi r24,lo8(-(1))
+ 108               	.LVL2:
+ 109 0040 8F71      		andi r24,lo8(31)
+ 110               	.LVL3:
+ 111 0042 8093 0000 		sts UIMgr_rxFifoHead,r24
+ 149:UartInterface.c ****     
+ 150:UartInterface.c ****     /* write the serial received event to the event fifo */
+ 151:UartInterface.c ****     Exec_eventFifo[Exec_eventFifoHead] = EV_SERIAL_DATA_RECEIVED;
+ 112               		.loc 1 151 0
+ 113 0046 8091 0000 		lds r24,Exec_eventFifoHead
+ 114               	.LVL4:
+ 115 004a E82F      		mov r30,r24
+ 116 004c F0E0      		ldi r31,0
+ 117 004e E050      		subi r30,lo8(-(Exec_eventFifo))
+ 118 0050 F040      		sbci r31,hi8(-(Exec_eventFifo))
+ 119 0052 91E0      		ldi r25,lo8(1)
+ 120 0054 9083      		st Z,r25
+ 121               	.LVL5:
+ 152:UartInterface.c **** 
+ 153:UartInterface.c ****     /* now move the head up */
+ 154:UartInterface.c ****     tmpHead = (Exec_eventFifoHead + 1) & (EXEC_EVENT_FIFO_MASK);
+ 155:UartInterface.c ****     Exec_eventFifoHead = tmpHead;
+ 122               		.loc 1 155 0
+ 123 0056 8F5F      		subi r24,lo8(-(1))
+ 124               	.LVL6:
+ 125 0058 8770      		andi r24,lo8(7)
+ 126               	.LVL7:
+ 127 005a 8093 0000 		sts Exec_eventFifoHead,r24
+ 128               	/* epilogue start */
+ 156:UartInterface.c **** }
+ 129               		.loc 1 156 0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccnucDcp.s 			page 6
+
+
+ 130 005e FF91      		pop r31
+ 131 0060 EF91      		pop r30
+ 132 0062 9F91      		pop r25
+ 133 0064 8F91      		pop r24
+ 134               	.LVL8:
+ 135 0066 0F90      		pop r0
+ 136 0068 0FBE      		out __SREG__,r0
+ 137               	.LVL9:
+ 138 006a 0F90      		pop r0
+ 139 006c 1F90      		pop r1
+ 140 006e 1895      		reti
+ 141               		.cfi_endproc
+ 142               	.LFE2:
+ 143               		.size	__vector_11, .-__vector_11
+ 144               	.Letext0:
+ 145               		.file 2 "UIMgr.h"
+ 146               		.file 3 "Executive.h"
+ 147               		.file 4 "c:\\program files (x86)\\atmel\\studio\\7.0\\toolchain\\avr8\\avr8-gnu-toolchain\\avr\\in
+ 148               		.section	.debug_info,"",@progbits
+ 149               	.Ldebug_info0:
+ 150 0000 0C01 0000 		.long	0x10c
+ 151 0004 0200      		.word	0x2
+ 152 0006 0000 0000 		.long	.Ldebug_abbrev0
+ 153 000a 04        		.byte	0x4
+ 154 000b 01        		.uleb128 0x1
+ 155 000c 0000 0000 		.long	.LASF13
+ 156 0010 0C        		.byte	0xc
+ 157 0011 0000 0000 		.long	.LASF14
+ 158 0015 0000 0000 		.long	.LASF15
+ 159 0019 0000 0000 		.long	.Ltext0
+ 160 001d 0000 0000 		.long	.Letext0
+ 161 0021 0000 0000 		.long	.Ldebug_line0
+ 162 0025 02        		.uleb128 0x2
+ 163 0026 01        		.byte	0x1
+ 164 0027 06        		.byte	0x6
+ 165 0028 0000 0000 		.long	.LASF0
+ 166 002c 03        		.uleb128 0x3
+ 167 002d 0000 0000 		.long	.LASF16
+ 168 0031 04        		.byte	0x4
+ 169 0032 7E        		.byte	0x7e
+ 170 0033 3700 0000 		.long	0x37
+ 171 0037 02        		.uleb128 0x2
+ 172 0038 01        		.byte	0x1
+ 173 0039 08        		.byte	0x8
+ 174 003a 0000 0000 		.long	.LASF1
+ 175 003e 04        		.uleb128 0x4
+ 176 003f 02        		.byte	0x2
+ 177 0040 05        		.byte	0x5
+ 178 0041 696E 7400 		.string	"int"
+ 179 0045 02        		.uleb128 0x2
+ 180 0046 02        		.byte	0x2
+ 181 0047 07        		.byte	0x7
+ 182 0048 0000 0000 		.long	.LASF2
+ 183 004c 02        		.uleb128 0x2
+ 184 004d 04        		.byte	0x4
+ 185 004e 05        		.byte	0x5
+ 186 004f 0000 0000 		.long	.LASF3
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccnucDcp.s 			page 7
+
+
+ 187 0053 02        		.uleb128 0x2
+ 188 0054 04        		.byte	0x4
+ 189 0055 07        		.byte	0x7
+ 190 0056 0000 0000 		.long	.LASF4
+ 191 005a 02        		.uleb128 0x2
+ 192 005b 08        		.byte	0x8
+ 193 005c 05        		.byte	0x5
+ 194 005d 0000 0000 		.long	.LASF5
+ 195 0061 02        		.uleb128 0x2
+ 196 0062 08        		.byte	0x8
+ 197 0063 07        		.byte	0x7
+ 198 0064 0000 0000 		.long	.LASF6
+ 199 0068 05        		.uleb128 0x5
+ 200 0069 01        		.byte	0x1
+ 201 006a 0000 0000 		.long	.LASF17
+ 202 006e 01        		.byte	0x1
+ 203 006f 4C        		.byte	0x4c
+ 204 0070 01        		.byte	0x1
+ 205 0071 0000 0000 		.long	.LFB0
+ 206 0075 0000 0000 		.long	.LFE0
+ 207 0079 03        		.byte	0x3
+ 208 007a 92        		.byte	0x92
+ 209 007b 20        		.uleb128 0x20
+ 210 007c 02        		.sleb128 2
+ 211 007d 01        		.byte	0x1
+ 212 007e 06        		.uleb128 0x6
+ 213 007f 01        		.byte	0x1
+ 214 0080 0000 0000 		.long	.LASF7
+ 215 0084 01        		.byte	0x1
+ 216 0085 73        		.byte	0x73
+ 217 0086 01        		.byte	0x1
+ 218 0087 0000 0000 		.long	.LFB1
+ 219 008b 0000 0000 		.long	.LFE1
+ 220 008f 03        		.byte	0x3
+ 221 0090 92        		.byte	0x92
+ 222 0091 20        		.uleb128 0x20
+ 223 0092 02        		.sleb128 2
+ 224 0093 01        		.byte	0x1
+ 225 0094 A600 0000 		.long	0xa6
+ 226 0098 07        		.uleb128 0x7
+ 227 0099 0000 0000 		.long	.LASF18
+ 228 009d 01        		.byte	0x1
+ 229 009e 73        		.byte	0x73
+ 230 009f 3700 0000 		.long	0x37
+ 231 00a3 01        		.byte	0x1
+ 232 00a4 68        		.byte	0x68
+ 233 00a5 00        		.byte	0
+ 234 00a6 08        		.uleb128 0x8
+ 235 00a7 01        		.byte	0x1
+ 236 00a8 0000 0000 		.long	.LASF8
+ 237 00ac 01        		.byte	0x1
+ 238 00ad 8A        		.byte	0x8a
+ 239 00ae 01        		.byte	0x1
+ 240 00af 0000 0000 		.long	.LFB2
+ 241 00b3 0000 0000 		.long	.LFE2
+ 242 00b7 0000 0000 		.long	.LLST0
+ 243 00bb 01        		.byte	0x1
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccnucDcp.s 			page 8
+
+
+ 244 00bc D000 0000 		.long	0xd0
+ 245 00c0 09        		.uleb128 0x9
+ 246 00c1 0000 0000 		.long	.LASF19
+ 247 00c5 01        		.byte	0x1
+ 248 00c6 8C        		.byte	0x8c
+ 249 00c7 3700 0000 		.long	0x37
+ 250 00cb 0000 0000 		.long	.LLST1
+ 251 00cf 00        		.byte	0
+ 252 00d0 0A        		.uleb128 0xa
+ 253 00d1 3700 0000 		.long	0x37
+ 254 00d5 DB00 0000 		.long	0xdb
+ 255 00d9 0B        		.uleb128 0xb
+ 256 00da 00        		.byte	0
+ 257 00db 0C        		.uleb128 0xc
+ 258 00dc 0000 0000 		.long	.LASF9
+ 259 00e0 02        		.byte	0x2
+ 260 00e1 3B        		.byte	0x3b
+ 261 00e2 D000 0000 		.long	0xd0
+ 262 00e6 01        		.byte	0x1
+ 263 00e7 01        		.byte	0x1
+ 264 00e8 0C        		.uleb128 0xc
+ 265 00e9 0000 0000 		.long	.LASF10
+ 266 00ed 02        		.byte	0x2
+ 267 00ee 3C        		.byte	0x3c
+ 268 00ef 3700 0000 		.long	0x37
+ 269 00f3 01        		.byte	0x1
+ 270 00f4 01        		.byte	0x1
+ 271 00f5 0C        		.uleb128 0xc
+ 272 00f6 0000 0000 		.long	.LASF11
+ 273 00fa 03        		.byte	0x3
+ 274 00fb 39        		.byte	0x39
+ 275 00fc D000 0000 		.long	0xd0
+ 276 0100 01        		.byte	0x1
+ 277 0101 01        		.byte	0x1
+ 278 0102 0C        		.uleb128 0xc
+ 279 0103 0000 0000 		.long	.LASF12
+ 280 0107 03        		.byte	0x3
+ 281 0108 3A        		.byte	0x3a
+ 282 0109 3700 0000 		.long	0x37
+ 283 010d 01        		.byte	0x1
+ 284 010e 01        		.byte	0x1
+ 285 010f 00        		.byte	0
+ 286               		.section	.debug_abbrev,"",@progbits
+ 287               	.Ldebug_abbrev0:
+ 288 0000 01        		.uleb128 0x1
+ 289 0001 11        		.uleb128 0x11
+ 290 0002 01        		.byte	0x1
+ 291 0003 25        		.uleb128 0x25
+ 292 0004 0E        		.uleb128 0xe
+ 293 0005 13        		.uleb128 0x13
+ 294 0006 0B        		.uleb128 0xb
+ 295 0007 03        		.uleb128 0x3
+ 296 0008 0E        		.uleb128 0xe
+ 297 0009 1B        		.uleb128 0x1b
+ 298 000a 0E        		.uleb128 0xe
+ 299 000b 11        		.uleb128 0x11
+ 300 000c 01        		.uleb128 0x1
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccnucDcp.s 			page 9
+
+
+ 301 000d 12        		.uleb128 0x12
+ 302 000e 01        		.uleb128 0x1
+ 303 000f 10        		.uleb128 0x10
+ 304 0010 06        		.uleb128 0x6
+ 305 0011 00        		.byte	0
+ 306 0012 00        		.byte	0
+ 307 0013 02        		.uleb128 0x2
+ 308 0014 24        		.uleb128 0x24
+ 309 0015 00        		.byte	0
+ 310 0016 0B        		.uleb128 0xb
+ 311 0017 0B        		.uleb128 0xb
+ 312 0018 3E        		.uleb128 0x3e
+ 313 0019 0B        		.uleb128 0xb
+ 314 001a 03        		.uleb128 0x3
+ 315 001b 0E        		.uleb128 0xe
+ 316 001c 00        		.byte	0
+ 317 001d 00        		.byte	0
+ 318 001e 03        		.uleb128 0x3
+ 319 001f 16        		.uleb128 0x16
+ 320 0020 00        		.byte	0
+ 321 0021 03        		.uleb128 0x3
+ 322 0022 0E        		.uleb128 0xe
+ 323 0023 3A        		.uleb128 0x3a
+ 324 0024 0B        		.uleb128 0xb
+ 325 0025 3B        		.uleb128 0x3b
+ 326 0026 0B        		.uleb128 0xb
+ 327 0027 49        		.uleb128 0x49
+ 328 0028 13        		.uleb128 0x13
+ 329 0029 00        		.byte	0
+ 330 002a 00        		.byte	0
+ 331 002b 04        		.uleb128 0x4
+ 332 002c 24        		.uleb128 0x24
+ 333 002d 00        		.byte	0
+ 334 002e 0B        		.uleb128 0xb
+ 335 002f 0B        		.uleb128 0xb
+ 336 0030 3E        		.uleb128 0x3e
+ 337 0031 0B        		.uleb128 0xb
+ 338 0032 03        		.uleb128 0x3
+ 339 0033 08        		.uleb128 0x8
+ 340 0034 00        		.byte	0
+ 341 0035 00        		.byte	0
+ 342 0036 05        		.uleb128 0x5
+ 343 0037 2E        		.uleb128 0x2e
+ 344 0038 00        		.byte	0
+ 345 0039 3F        		.uleb128 0x3f
+ 346 003a 0C        		.uleb128 0xc
+ 347 003b 03        		.uleb128 0x3
+ 348 003c 0E        		.uleb128 0xe
+ 349 003d 3A        		.uleb128 0x3a
+ 350 003e 0B        		.uleb128 0xb
+ 351 003f 3B        		.uleb128 0x3b
+ 352 0040 0B        		.uleb128 0xb
+ 353 0041 27        		.uleb128 0x27
+ 354 0042 0C        		.uleb128 0xc
+ 355 0043 11        		.uleb128 0x11
+ 356 0044 01        		.uleb128 0x1
+ 357 0045 12        		.uleb128 0x12
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccnucDcp.s 			page 10
+
+
+ 358 0046 01        		.uleb128 0x1
+ 359 0047 40        		.uleb128 0x40
+ 360 0048 0A        		.uleb128 0xa
+ 361 0049 9742      		.uleb128 0x2117
+ 362 004b 0C        		.uleb128 0xc
+ 363 004c 00        		.byte	0
+ 364 004d 00        		.byte	0
+ 365 004e 06        		.uleb128 0x6
+ 366 004f 2E        		.uleb128 0x2e
+ 367 0050 01        		.byte	0x1
+ 368 0051 3F        		.uleb128 0x3f
+ 369 0052 0C        		.uleb128 0xc
+ 370 0053 03        		.uleb128 0x3
+ 371 0054 0E        		.uleb128 0xe
+ 372 0055 3A        		.uleb128 0x3a
+ 373 0056 0B        		.uleb128 0xb
+ 374 0057 3B        		.uleb128 0x3b
+ 375 0058 0B        		.uleb128 0xb
+ 376 0059 27        		.uleb128 0x27
+ 377 005a 0C        		.uleb128 0xc
+ 378 005b 11        		.uleb128 0x11
+ 379 005c 01        		.uleb128 0x1
+ 380 005d 12        		.uleb128 0x12
+ 381 005e 01        		.uleb128 0x1
+ 382 005f 40        		.uleb128 0x40
+ 383 0060 0A        		.uleb128 0xa
+ 384 0061 9742      		.uleb128 0x2117
+ 385 0063 0C        		.uleb128 0xc
+ 386 0064 01        		.uleb128 0x1
+ 387 0065 13        		.uleb128 0x13
+ 388 0066 00        		.byte	0
+ 389 0067 00        		.byte	0
+ 390 0068 07        		.uleb128 0x7
+ 391 0069 05        		.uleb128 0x5
+ 392 006a 00        		.byte	0
+ 393 006b 03        		.uleb128 0x3
+ 394 006c 0E        		.uleb128 0xe
+ 395 006d 3A        		.uleb128 0x3a
+ 396 006e 0B        		.uleb128 0xb
+ 397 006f 3B        		.uleb128 0x3b
+ 398 0070 0B        		.uleb128 0xb
+ 399 0071 49        		.uleb128 0x49
+ 400 0072 13        		.uleb128 0x13
+ 401 0073 02        		.uleb128 0x2
+ 402 0074 0A        		.uleb128 0xa
+ 403 0075 00        		.byte	0
+ 404 0076 00        		.byte	0
+ 405 0077 08        		.uleb128 0x8
+ 406 0078 2E        		.uleb128 0x2e
+ 407 0079 01        		.byte	0x1
+ 408 007a 3F        		.uleb128 0x3f
+ 409 007b 0C        		.uleb128 0xc
+ 410 007c 03        		.uleb128 0x3
+ 411 007d 0E        		.uleb128 0xe
+ 412 007e 3A        		.uleb128 0x3a
+ 413 007f 0B        		.uleb128 0xb
+ 414 0080 3B        		.uleb128 0x3b
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccnucDcp.s 			page 11
+
+
+ 415 0081 0B        		.uleb128 0xb
+ 416 0082 27        		.uleb128 0x27
+ 417 0083 0C        		.uleb128 0xc
+ 418 0084 11        		.uleb128 0x11
+ 419 0085 01        		.uleb128 0x1
+ 420 0086 12        		.uleb128 0x12
+ 421 0087 01        		.uleb128 0x1
+ 422 0088 40        		.uleb128 0x40
+ 423 0089 06        		.uleb128 0x6
+ 424 008a 9742      		.uleb128 0x2117
+ 425 008c 0C        		.uleb128 0xc
+ 426 008d 01        		.uleb128 0x1
+ 427 008e 13        		.uleb128 0x13
+ 428 008f 00        		.byte	0
+ 429 0090 00        		.byte	0
+ 430 0091 09        		.uleb128 0x9
+ 431 0092 34        		.uleb128 0x34
+ 432 0093 00        		.byte	0
+ 433 0094 03        		.uleb128 0x3
+ 434 0095 0E        		.uleb128 0xe
+ 435 0096 3A        		.uleb128 0x3a
+ 436 0097 0B        		.uleb128 0xb
+ 437 0098 3B        		.uleb128 0x3b
+ 438 0099 0B        		.uleb128 0xb
+ 439 009a 49        		.uleb128 0x49
+ 440 009b 13        		.uleb128 0x13
+ 441 009c 02        		.uleb128 0x2
+ 442 009d 06        		.uleb128 0x6
+ 443 009e 00        		.byte	0
+ 444 009f 00        		.byte	0
+ 445 00a0 0A        		.uleb128 0xa
+ 446 00a1 01        		.uleb128 0x1
+ 447 00a2 01        		.byte	0x1
+ 448 00a3 49        		.uleb128 0x49
+ 449 00a4 13        		.uleb128 0x13
+ 450 00a5 01        		.uleb128 0x1
+ 451 00a6 13        		.uleb128 0x13
+ 452 00a7 00        		.byte	0
+ 453 00a8 00        		.byte	0
+ 454 00a9 0B        		.uleb128 0xb
+ 455 00aa 21        		.uleb128 0x21
+ 456 00ab 00        		.byte	0
+ 457 00ac 00        		.byte	0
+ 458 00ad 00        		.byte	0
+ 459 00ae 0C        		.uleb128 0xc
+ 460 00af 34        		.uleb128 0x34
+ 461 00b0 00        		.byte	0
+ 462 00b1 03        		.uleb128 0x3
+ 463 00b2 0E        		.uleb128 0xe
+ 464 00b3 3A        		.uleb128 0x3a
+ 465 00b4 0B        		.uleb128 0xb
+ 466 00b5 3B        		.uleb128 0x3b
+ 467 00b6 0B        		.uleb128 0xb
+ 468 00b7 49        		.uleb128 0x49
+ 469 00b8 13        		.uleb128 0x13
+ 470 00b9 3F        		.uleb128 0x3f
+ 471 00ba 0C        		.uleb128 0xc
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccnucDcp.s 			page 12
+
+
+ 472 00bb 3C        		.uleb128 0x3c
+ 473 00bc 0C        		.uleb128 0xc
+ 474 00bd 00        		.byte	0
+ 475 00be 00        		.byte	0
+ 476 00bf 00        		.byte	0
+ 477               		.section	.debug_loc,"",@progbits
+ 478               	.Ldebug_loc0:
+ 479               	.LLST0:
+ 480 0000 1C00 0000 		.long	.LFB2-.Ltext0
+ 481 0004 1E00 0000 		.long	.LCFI0-.Ltext0
+ 482 0008 0300      		.word	0x3
+ 483 000a 92        		.byte	0x92
+ 484 000b 20        		.uleb128 0x20
+ 485 000c 02        		.sleb128 2
+ 486 000d 1E00 0000 		.long	.LCFI0-.Ltext0
+ 487 0011 2000 0000 		.long	.LCFI1-.Ltext0
+ 488 0015 0300      		.word	0x3
+ 489 0017 92        		.byte	0x92
+ 490 0018 20        		.uleb128 0x20
+ 491 0019 03        		.sleb128 3
+ 492 001a 2000 0000 		.long	.LCFI1-.Ltext0
+ 493 001e 2800 0000 		.long	.LCFI2-.Ltext0
+ 494 0022 0300      		.word	0x3
+ 495 0024 92        		.byte	0x92
+ 496 0025 20        		.uleb128 0x20
+ 497 0026 04        		.sleb128 4
+ 498 0027 2800 0000 		.long	.LCFI2-.Ltext0
+ 499 002b 2A00 0000 		.long	.LCFI3-.Ltext0
+ 500 002f 0300      		.word	0x3
+ 501 0031 92        		.byte	0x92
+ 502 0032 20        		.uleb128 0x20
+ 503 0033 05        		.sleb128 5
+ 504 0034 2A00 0000 		.long	.LCFI3-.Ltext0
+ 505 0038 2C00 0000 		.long	.LCFI4-.Ltext0
+ 506 003c 0300      		.word	0x3
+ 507 003e 92        		.byte	0x92
+ 508 003f 20        		.uleb128 0x20
+ 509 0040 06        		.sleb128 6
+ 510 0041 2C00 0000 		.long	.LCFI4-.Ltext0
+ 511 0045 2E00 0000 		.long	.LCFI5-.Ltext0
+ 512 0049 0300      		.word	0x3
+ 513 004b 92        		.byte	0x92
+ 514 004c 20        		.uleb128 0x20
+ 515 004d 07        		.sleb128 7
+ 516 004e 2E00 0000 		.long	.LCFI5-.Ltext0
+ 517 0052 7000 0000 		.long	.LFE2-.Ltext0
+ 518 0056 0300      		.word	0x3
+ 519 0058 92        		.byte	0x92
+ 520 0059 20        		.uleb128 0x20
+ 521 005a 08        		.sleb128 8
+ 522 005b 0000 0000 		.long	0
+ 523 005f 0000 0000 		.long	0
+ 524               	.LLST1:
+ 525 0063 3E00 0000 		.long	.LVL1-.Ltext0
+ 526 0067 4000 0000 		.long	.LVL2-.Ltext0
+ 527 006b 0500      		.word	0x5
+ 528 006d 88        		.byte	0x88
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccnucDcp.s 			page 13
+
+
+ 529 006e 01        		.sleb128 1
+ 530 006f 4F        		.byte	0x4f
+ 531 0070 1A        		.byte	0x1a
+ 532 0071 9F        		.byte	0x9f
+ 533 0072 4200 0000 		.long	.LVL3-.Ltext0
+ 534 0076 4A00 0000 		.long	.LVL4-.Ltext0
+ 535 007a 0100      		.word	0x1
+ 536 007c 68        		.byte	0x68
+ 537 007d 5600 0000 		.long	.LVL5-.Ltext0
+ 538 0081 5800 0000 		.long	.LVL6-.Ltext0
+ 539 0085 0500      		.word	0x5
+ 540 0087 88        		.byte	0x88
+ 541 0088 01        		.sleb128 1
+ 542 0089 37        		.byte	0x37
+ 543 008a 1A        		.byte	0x1a
+ 544 008b 9F        		.byte	0x9f
+ 545 008c 5A00 0000 		.long	.LVL7-.Ltext0
+ 546 0090 6600 0000 		.long	.LVL8-.Ltext0
+ 547 0094 0100      		.word	0x1
+ 548 0096 68        		.byte	0x68
+ 549 0097 0000 0000 		.long	0
+ 550 009b 0000 0000 		.long	0
+ 551               		.section	.debug_aranges,"",@progbits
+ 552 0000 1C00 0000 		.long	0x1c
+ 553 0004 0200      		.word	0x2
+ 554 0006 0000 0000 		.long	.Ldebug_info0
+ 555 000a 04        		.byte	0x4
+ 556 000b 00        		.byte	0
+ 557 000c 0000      		.word	0
+ 558 000e 0000      		.word	0
+ 559 0010 0000 0000 		.long	.Ltext0
+ 560 0014 7000 0000 		.long	.Letext0-.Ltext0
+ 561 0018 0000 0000 		.long	0
+ 562 001c 0000 0000 		.long	0
+ 563               		.section	.debug_line,"",@progbits
+ 564               	.Ldebug_line0:
+ 565 0000 0E01 0000 		.section	.debug_str,"MS",@progbits,1
+ 565      0200 9F00 
+ 565      0000 0201 
+ 565      FB0E 0A00 
+ 565      0101 0101 
+ 566               	.LASF18:
+ 567 0000 7478 4279 		.string	"txByte"
+ 567      7465 00
+ 568               	.LASF11:
+ 569 0007 4578 6563 		.string	"Exec_eventFifo"
+ 569      5F65 7665 
+ 569      6E74 4669 
+ 569      666F 00
+ 570               	.LASF8:
+ 571 0016 5F5F 7665 		.string	"__vector_11"
+ 571      6374 6F72 
+ 571      5F31 3100 
+ 572               	.LASF1:
+ 573 0022 756E 7369 		.string	"unsigned char"
+ 573      676E 6564 
+ 573      2063 6861 
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccnucDcp.s 			page 14
+
+
+ 573      7200 
+ 574               	.LASF4:
+ 575 0030 6C6F 6E67 		.string	"long unsigned int"
+ 575      2075 6E73 
+ 575      6967 6E65 
+ 575      6420 696E 
+ 575      7400 
+ 576               	.LASF19:
+ 577 0042 746D 7048 		.string	"tmpHead"
+ 577      6561 6400 
+ 578               	.LASF15:
+ 579 004a 433A 5C77 		.string	"C:\\workspace\\AVRcam\\MainController"
+ 579      6F72 6B73 
+ 579      7061 6365 
+ 579      5C41 5652 
+ 579      6361 6D5C 
+ 580               	.LASF17:
+ 581 006d 5561 7274 		.string	"UartInt_init"
+ 581      496E 745F 
+ 581      696E 6974 
+ 581      00
+ 582               	.LASF2:
+ 583 007a 756E 7369 		.string	"unsigned int"
+ 583      676E 6564 
+ 583      2069 6E74 
+ 583      00
+ 584               	.LASF6:
+ 585 0087 6C6F 6E67 		.string	"long long unsigned int"
+ 585      206C 6F6E 
+ 585      6720 756E 
+ 585      7369 676E 
+ 585      6564 2069 
+ 586               	.LASF16:
+ 587 009e 7569 6E74 		.string	"uint8_t"
+ 587      385F 7400 
+ 588               	.LASF14:
+ 589 00a6 5561 7274 		.string	"UartInterface.c"
+ 589      496E 7465 
+ 589      7266 6163 
+ 589      652E 6300 
+ 590               	.LASF9:
+ 591 00b6 5549 4D67 		.string	"UIMgr_rxFifo"
+ 591      725F 7278 
+ 591      4669 666F 
+ 591      00
+ 592               	.LASF5:
+ 593 00c3 6C6F 6E67 		.string	"long long int"
+ 593      206C 6F6E 
+ 593      6720 696E 
+ 593      7400 
+ 594               	.LASF12:
+ 595 00d1 4578 6563 		.string	"Exec_eventFifoHead"
+ 595      5F65 7665 
+ 595      6E74 4669 
+ 595      666F 4865 
+ 595      6164 00
+ 596               	.LASF10:
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccnucDcp.s 			page 15
+
+
+ 597 00e4 5549 4D67 		.string	"UIMgr_rxFifoHead"
+ 597      725F 7278 
+ 597      4669 666F 
+ 597      4865 6164 
+ 597      00
+ 598               	.LASF13:
+ 599 00f5 474E 5520 		.string	"GNU C11 5.4.0 -mn-flash=1 -mno-skip-bug -mmcu=avr4 -g -O1 -funsigned-char -funsigned-bitf
+ 599      4331 3120 
+ 599      352E 342E 
+ 599      3020 2D6D 
+ 599      6E2D 666C 
+ 600               	.LASF7:
+ 601 0170 5561 7274 		.string	"UartInt_txByte"
+ 601      496E 745F 
+ 601      7478 4279 
+ 601      7465 00
+ 602               	.LASF3:
+ 603 017f 6C6F 6E67 		.string	"long int"
+ 603      2069 6E74 
+ 603      00
+ 604               	.LASF0:
+ 605 0188 7369 676E 		.string	"signed char"
+ 605      6564 2063 
+ 605      6861 7200 
+ 606               		.ident	"GCC: (AVR_8_bit_GNU_Toolchain_3.6.0_1734) 5.4.0"
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccnucDcp.s 			page 16
+
+
+DEFINED SYMBOLS
+                            *ABS*:00000000 UartInterface.c
+C:\Users\Joe\AppData\Local\Temp\ccnucDcp.s:2      *ABS*:0000003e __SP_H__
+C:\Users\Joe\AppData\Local\Temp\ccnucDcp.s:3      *ABS*:0000003d __SP_L__
+C:\Users\Joe\AppData\Local\Temp\ccnucDcp.s:4      *ABS*:0000003f __SREG__
+C:\Users\Joe\AppData\Local\Temp\ccnucDcp.s:5      *ABS*:00000000 __tmp_reg__
+C:\Users\Joe\AppData\Local\Temp\ccnucDcp.s:6      *ABS*:00000001 __zero_reg__
+C:\Users\Joe\AppData\Local\Temp\ccnucDcp.s:12     .text:00000000 UartInt_init
+C:\Users\Joe\AppData\Local\Temp\ccnucDcp.s:41     .text:00000014 UartInt_txByte
+C:\Users\Joe\AppData\Local\Temp\ccnucDcp.s:62     .text:0000001c __vector_11
+
+UNDEFINED SYMBOLS
+UIMgr_rxFifoHead
+UIMgr_rxFifo
+Exec_eventFifoHead
+Exec_eventFifo

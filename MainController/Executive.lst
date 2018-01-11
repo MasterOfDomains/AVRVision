@@ -1,0 +1,1501 @@
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s 			page 1
+
+
+   1               		.file	"Executive.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__tmp_reg__ = 0
+   6               	__zero_reg__ = 1
+   7               		.text
+   8               	.Ltext0:
+   9               		.cfi_sections	.debug_frame
+  10               	.global	Exec_run
+  11               		.type	Exec_run, @function
+  12               	Exec_run:
+  13               	.LFB4:
+  14               		.file 1 "Executive.c"
+   1:Executive.c   **** /*
+   2:Executive.c   ****     Copyright (C) 2004    John Orlando
+   3:Executive.c   ****     
+   4:Executive.c   ****    AVRcam: a small real-time image processing engine.
+   5:Executive.c   **** 
+   6:Executive.c   ****     This program is free software; you can redistribute it and/or
+   7:Executive.c   ****     modify it under the terms of the GNU General Public
+   8:Executive.c   ****     License as published by the Free Software Foundation; either
+   9:Executive.c   ****     version 2 of the License, or (at your option) any later version.
+  10:Executive.c   **** 
+  11:Executive.c   ****     This program is distributed in the hope that it will be useful,
+  12:Executive.c   ****     but WITHOUT ANY WARRANTY; without even the implied warranty of
+  13:Executive.c   ****     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  14:Executive.c   ****     General Public License for more details.
+  15:Executive.c   **** 
+  16:Executive.c   ****     You should have received a copy of the GNU General Public
+  17:Executive.c   ****     License along with this program; if not, write to the Free Software
+  18:Executive.c   ****     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+  19:Executive.c   **** 
+  20:Executive.c   ****    For more information on the AVRcam, please contact:
+  21:Executive.c   **** 
+  22:Executive.c   ****    john@jrobot.net
+  23:Executive.c   **** 
+  24:Executive.c   ****    or go to www.jrobot.net for more details regarding the system.
+  25:Executive.c   **** */
+  26:Executive.c   **** /***********************************************************
+  27:Executive.c   **** 	Module Name: Executive.c
+  28:Executive.c   **** 	Module Date: 04/12/2004
+  29:Executive.c   **** 	Module Auth: John Orlando
+  30:Executive.c   **** 	
+  31:Executive.c   **** 	Description: This file is responsible for implementing a
+  32:Executive.c   **** 	minimalist event dispatcher.  It keeps track of an event
+  33:Executive.c   **** 	fifo that waits for new events to come in, and dispatches
+  34:Executive.c   **** 	them to any entities that care about them.
+  35:Executive.c   ****     
+  36:Executive.c   ****     Revision History:
+  37:Executive.c   ****     Date        Rel Ver.    Notes
+  38:Executive.c   ****     4/10/2004      0.1     Module created
+  39:Executive.c   ****     6/30/2004      1.0     Initial release for Circuit Cellar
+  40:Executive.c   ****                            contest.
+  41:Executive.c   ****     1/16/2005      1.4     Fixed issue where the interrupts weren't
+  42:Executive.c   ****                            being turned off when the fastEventBitmask
+  43:Executive.c   ****                            was being accessed.  Also removed redundant
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s 			page 2
+
+
+  44:Executive.c   ****                            interrupt masking when accessing the
+  45:Executive.c   ****                            main event fifo.  Also fixed issue where
+  46:Executive.c   ****                            the main event fifo wasn't being checked
+  47:Executive.c   ****                            for events if an event was pending in
+  48:Executive.c   ****                            the fast event fifo.
+  49:Executive.c   **** ***********************************************************/
+  50:Executive.c   **** 
+  51:Executive.c   **** /*	Includes */
+  52:Executive.c   **** #include <stdlib.h>
+  53:Executive.c   **** #include "CommonDefs.h"
+  54:Executive.c   **** #include "Executive.h"
+  55:Executive.c   **** #include "FrameMgr.h"
+  56:Executive.c   **** #include "CamInterface.h"
+  57:Executive.c   **** #include "UIMgr.h"
+  58:Executive.c   **** #include "UartInterface.h"
+  59:Executive.c   **** #include "CamConfig.h"
+  60:Executive.c   **** #include "Utility.h"
+  61:Executive.c   **** 
+  62:Executive.c   **** /*  Local Variables */
+  63:Executive.c   **** unsigned char Exec_eventFifo[EXEC_EVENT_FIFO_SIZE];
+  64:Executive.c   **** unsigned char Exec_eventFifoHead=0;
+  65:Executive.c   **** unsigned char Exec_eventFifoTail=0;
+  66:Executive.c   **** 
+  67:Executive.c   **** /*  Local Function Definitions */
+  68:Executive.c   **** static unsigned char Exec_readEventFifo(void);
+  69:Executive.c   **** 
+  70:Executive.c   **** /* 	Local Structures and Typedefs */
+  71:Executive.c   **** 
+  72:Executive.c   **** /*  Extern Variables */
+  73:Executive.c   **** /* This bitmask holds events that need to be processed as fast as possible */
+  74:Executive.c   **** unsigned char fastEventBitmask = 0x00;
+  75:Executive.c   **** 
+  76:Executive.c   **** /*  Definitions */
+  77:Executive.c   **** #define IS_DATA_IN_EVENT_FIFO() (!(Exec_eventFifoHead == Exec_eventFifoTail))
+  78:Executive.c   **** /***********************************************************
+  79:Executive.c   **** 	Function Name: Exec_run
+  80:Executive.c   **** 	Function Description: This function is responsible for
+  81:Executive.c   **** 	running the main control loop.  The control loop is 
+  82:Executive.c   **** 	based on checking both the fast-event bitmask (for high
+  83:Executive.c   ****     priority events) and the event FIFO to determine if an
+  84:Executive.c   ****     event needs to be handled.  The event is then dispatched
+  85:Executive.c   ****     to the appropriate handler.
+  86:Executive.c   **** 	Inputs:  none
+  87:Executive.c   **** 	Outputs: none
+  88:Executive.c   **** ***********************************************************/	
+  89:Executive.c   **** void Exec_run(void)
+  90:Executive.c   **** {
+  15               		.loc 1 90 0
+  16               		.cfi_startproc
+  17               	/* prologue: function */
+  18               	/* frame size = 0 */
+  19               	/* stack size = 0 */
+  20               	.L__stack_usage = 0
+  21               	.L6:
+  91:Executive.c   **** 	unsigned char eventGenerated;
+  92:Executive.c   **** 	
+  93:Executive.c   **** 	while(1)
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s 			page 3
+
+
+  94:Executive.c   **** 	{
+  95:Executive.c   **** 		if (fastEventBitmask)
+  22               		.loc 1 95 0
+  23 0000 8091 0000 		lds r24,fastEventBitmask
+  24 0004 8823      		tst r24
+  25 0006 01F0      		breq .L4
+  96:Executive.c   **** 		{
+  97:Executive.c   **** 			/* an event needing fast processing has been received */
+  98:Executive.c   **** 			/* a received line needs to be processed...this
+  99:Executive.c   **** 			needs to be processed as quickly as possible */
+ 100:Executive.c   **** 			if (fastEventBitmask & FEV_ACQUIRE_LINE_COMPLETE)
+  26               		.loc 1 100 0
+  27 0008 80FF      		sbrs r24,0
+  28 000a 00C0      		rjmp .L5
+ 101:Executive.c   **** 			{
+ 102:Executive.c   ****                 DISABLE_INTS();
+  29               		.loc 1 102 0
+  30               	/* #APP */
+  31               	 ;  102 "Executive.c" 1
+  32 000c F894      		cli
+  33               	 ;  0 "" 2
+ 103:Executive.c   **** 				fastEventBitmask &= ~FEV_ACQUIRE_LINE_COMPLETE;	
+  34               		.loc 1 103 0
+  35               	/* #NOAPP */
+  36 000e 8091 0000 		lds r24,fastEventBitmask
+  37 0012 8E7F      		andi r24,lo8(-2)
+  38 0014 8093 0000 		sts fastEventBitmask,r24
+ 104:Executive.c   ****                 ENABLE_INTS();
+  39               		.loc 1 104 0
+  40               	/* #APP */
+  41               	 ;  104 "Executive.c" 1
+  42 0018 7894      		sei
+  43               	 ;  0 "" 2
+ 105:Executive.c   **** 				FrameMgr_processLine();				
+  44               		.loc 1 105 0
+  45               	/* #NOAPP */
+  46 001a 00D0      		rcall FrameMgr_processLine
+  47               	.LVL0:
+ 106:Executive.c   **** 			
+ 107:Executive.c   **** 				/* also check if serial data needs to be sent
+ 108:Executive.c   **** 				out through UIMgr */
+ 109:Executive.c   **** 				UIMgr_transmitPendingData();	
+  48               		.loc 1 109 0
+  49 001c 00D0      		rcall UIMgr_transmitPendingData
+  50               	.LVL1:
+  51               	.L5:
+ 110:Executive.c   **** 
+ 111:Executive.c   **** 				/* we can't just call acquire line again here,
+ 112:Executive.c   **** 				since we don't know if we need to acquire another
+ 113:Executive.c   **** 				line or not (it depends on the FrameMgr to figure
+ 114:Executive.c   **** 				this out) */
+ 115:Executive.c   **** 			}
+ 116:Executive.c   **** 			if (fastEventBitmask & FEV_PROCESS_LINE_COMPLETE)
+  52               		.loc 1 116 0
+  53 001e 8091 0000 		lds r24,fastEventBitmask
+  54 0022 81FF      		sbrs r24,1
+  55 0024 00C0      		rjmp .L4
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s 			page 4
+
+
+ 117:Executive.c   **** 			{
+ 118:Executive.c   ****                 DISABLE_INTS();
+  56               		.loc 1 118 0
+  57               	/* #APP */
+  58               	 ;  118 "Executive.c" 1
+  59 0026 F894      		cli
+  60               	 ;  0 "" 2
+ 119:Executive.c   **** 				fastEventBitmask &= ~FEV_PROCESS_LINE_COMPLETE;
+  61               		.loc 1 119 0
+  62               	/* #NOAPP */
+  63 0028 8091 0000 		lds r24,fastEventBitmask
+  64 002c 8D7F      		andi r24,lo8(-3)
+  65 002e 8093 0000 		sts fastEventBitmask,r24
+ 120:Executive.c   ****                 ENABLE_INTS();
+  66               		.loc 1 120 0
+  67               	/* #APP */
+  68               	 ;  120 "Executive.c" 1
+  69 0032 7894      		sei
+  70               	 ;  0 "" 2
+ 121:Executive.c   **** 				FrameMgr_acquireLine();
+  71               		.loc 1 121 0
+  72               	/* #NOAPP */
+  73 0034 00D0      		rcall FrameMgr_acquireLine
+  74               	.LVL2:
+  75               	.L4:
+ 122:Executive.c   **** 			}
+ 123:Executive.c   **** 		}		
+ 124:Executive.c   **** 		
+ 125:Executive.c   ****         if (IS_DATA_IN_EVENT_FIFO() == TRUE)		
+  76               		.loc 1 125 0
+  77 0036 9091 0000 		lds r25,Exec_eventFifoHead
+  78 003a 8091 0000 		lds r24,Exec_eventFifoTail
+  79 003e 9817      		cp r25,r24
+  80 0040 01F0      		breq .L6
+ 126:Executive.c   **** 		{
+ 127:Executive.c   **** 			PORTD |= 0x40;
+  81               		.loc 1 127 0
+  82 0042 969A      		sbi 0x12,6
+  83               	.LBB4:
+  84               	.LBB5:
+ 128:Executive.c   ****             eventGenerated = Exec_readEventFifo();
+ 129:Executive.c   **** 			switch(eventGenerated)
+ 130:Executive.c   **** 			{
+ 131:Executive.c   **** 				case (EV_DUMP_FRAME):
+ 132:Executive.c   **** 					FrameMgr_dispatchEvent(eventGenerated);
+ 133:Executive.c   **** 					break;
+ 134:Executive.c   **** 					
+ 135:Executive.c   **** 				case (EV_ENABLE_TRACKING):
+ 136:Executive.c   **** 					FrameMgr_dispatchEvent(eventGenerated);
+ 137:Executive.c   **** 					break;
+ 138:Executive.c   **** 					
+ 139:Executive.c   **** 				case (EV_DISABLE_TRACKING):
+ 140:Executive.c   **** 					FrameMgr_dispatchEvent(eventGenerated);
+ 141:Executive.c   **** 					break;
+ 142:Executive.c   **** 					
+ 143:Executive.c   **** 				case (EV_ACQUIRE_LINE_COMPLETE):
+ 144:Executive.c   **** 					FrameMgr_dispatchEvent(eventGenerated);
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s 			page 5
+
+
+ 145:Executive.c   **** 					UIMgr_dispatchEvent(eventGenerated);
+ 146:Executive.c   **** 					break;
+ 147:Executive.c   **** 					
+ 148:Executive.c   **** 				case (EV_ACQUIRE_FRAME_COMPLETE):				
+ 149:Executive.c   **** 					FrameMgr_dispatchEvent(eventGenerated);
+ 150:Executive.c   **** 					break;
+ 151:Executive.c   **** 					
+ 152:Executive.c   **** 				case (EV_PROCESS_LINE_COMPLETE):
+ 153:Executive.c   **** 					FrameMgr_dispatchEvent(eventGenerated);
+ 154:Executive.c   **** 					break;
+ 155:Executive.c   **** 				
+ 156:Executive.c   **** 				case (EV_PROCESS_FRAME_COMPLETE):
+ 157:Executive.c   **** 					FrameMgr_dispatchEvent(eventGenerated);
+ 158:Executive.c   **** 					break;
+ 159:Executive.c   **** 					
+ 160:Executive.c   **** 				case (EV_SERIAL_DATA_RECEIVED):
+ 161:Executive.c   **** 					UIMgr_dispatchEvent(eventGenerated);
+ 162:Executive.c   **** 					FrameMgr_dispatchEvent(eventGenerated);
+ 163:Executive.c   **** 					break;																
+ 164:Executive.c   **** 
+ 165:Executive.c   **** 				case (EV_SERIAL_DATA_PENDING_TX):
+ 166:Executive.c   **** 					UIMgr_dispatchEvent(eventGenerated);
+ 167:Executive.c   **** 					break;
+ 168:Executive.c   **** 								
+ 169:Executive.c   **** 				default:		
+ 170:Executive.c   **** 					break;
+ 171:Executive.c   **** 			}			
+ 172:Executive.c   **** 		}
+ 173:Executive.c   ****         
+ 174:Executive.c   ****         /* toggle the debug line */
+ 175:Executive.c   **** 
+ 176:Executive.c   **** 	}
+ 177:Executive.c   **** }
+ 178:Executive.c   **** 
+ 179:Executive.c   **** /***********************************************************
+ 180:Executive.c   **** 	Function Name: Exec_readEventFifo
+ 181:Executive.c   **** 	Function Description: This function is responsible for
+ 182:Executive.c   **** 	reading a single event out of the event fifo.
+ 183:Executive.c   **** 	Inputs:  none 
+ 184:Executive.c   **** 	Outputs: unsigned char-the data read
+ 185:Executive.c   **** ***********************************************************/	
+ 186:Executive.c   **** static unsigned char Exec_readEventFifo(void)
+ 187:Executive.c   **** {
+ 188:Executive.c   **** 	unsigned char dataByte, tmpTail;
+ 189:Executive.c   **** 	
+ 190:Executive.c   **** 	DISABLE_INTS();
+  85               		.loc 1 190 0
+  86               	/* #APP */
+  87               	 ;  190 "Executive.c" 1
+  88 0044 F894      		cli
+  89               	 ;  0 "" 2
+ 191:Executive.c   **** 	/* just return the current tail from the tx fifo */
+ 192:Executive.c   **** 	dataByte = Exec_eventFifo[Exec_eventFifoTail];	
+  90               		.loc 1 192 0
+  91               	/* #NOAPP */
+  92 0046 8091 0000 		lds r24,Exec_eventFifoTail
+  93 004a E82F      		mov r30,r24
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s 			page 6
+
+
+  94 004c F0E0      		ldi r31,0
+  95 004e E050      		subi r30,lo8(-(Exec_eventFifo))
+  96 0050 F040      		sbci r31,hi8(-(Exec_eventFifo))
+  97 0052 9081      		ld r25,Z
+  98               	.LVL3:
+ 193:Executive.c   **** 	tmpTail = (Exec_eventFifoTail+1) & (EXEC_EVENT_FIFO_MASK);
+ 194:Executive.c   **** 	Exec_eventFifoTail = tmpTail;
+  99               		.loc 1 194 0
+ 100 0054 8F5F      		subi r24,lo8(-(1))
+ 101               	.LVL4:
+ 102 0056 8770      		andi r24,lo8(7)
+ 103               	.LVL5:
+ 104 0058 8093 0000 		sts Exec_eventFifoTail,r24
+ 195:Executive.c   **** 	ENABLE_INTS();
+ 105               		.loc 1 195 0
+ 106               	/* #APP */
+ 107               	 ;  195 "Executive.c" 1
+ 108 005c 7894      		sei
+ 109               	 ;  0 "" 2
+ 110               	.LVL6:
+ 111               	/* #NOAPP */
+ 112               	.LBE5:
+ 113               	.LBE4:
+ 129:Executive.c   **** 			{
+ 114               		.loc 1 129 0
+ 115 005e 9031      		cpi r25,lo8(16)
+ 116 0060 01F0      		breq .L7
+ 117 0062 00F4      		brsh .L8
+ 118 0064 9230      		cpi r25,lo8(2)
+ 119 0066 01F0      		breq .L9
+ 120 0068 00F4      		brsh .L10
+ 121 006a 9130      		cpi r25,lo8(1)
+ 122 006c 01F0      		breq .L11
+ 123 006e 00C0      		rjmp .L6
+ 124               	.L10:
+ 125 0070 9430      		cpi r25,lo8(4)
+ 126 0072 01F0      		breq .L12
+ 127 0074 9830      		cpi r25,lo8(8)
+ 128 0076 01F0      		breq .L13
+ 129 0078 00C0      		rjmp .L6
+ 130               	.L8:
+ 131 007a 9038      		cpi r25,lo8(-128)
+ 132 007c 01F0      		breq .L14
+ 133 007e 00F4      		brsh .L15
+ 134 0080 9032      		cpi r25,lo8(32)
+ 135 0082 01F0      		breq .L16
+ 136 0084 00C0      		rjmp .L6
+ 137               	.L15:
+ 138 0086 9138      		cpi r25,lo8(-127)
+ 139 0088 01F0      		breq .L17
+ 140 008a 9039      		cpi r25,lo8(-112)
+ 141 008c 01F0      		breq .L18
+ 142 008e 00C0      		rjmp .L6
+ 143               	.L9:
+ 132:Executive.c   **** 					break;
+ 144               		.loc 1 132 0
+ 145 0090 82E0      		ldi r24,lo8(2)
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s 			page 7
+
+
+ 146 0092 00D0      		rcall FrameMgr_dispatchEvent
+ 147               	.LVL7:
+ 133:Executive.c   **** 					
+ 148               		.loc 1 133 0
+ 149 0094 00C0      		rjmp .L6
+ 150               	.L14:
+ 136:Executive.c   **** 					break;
+ 151               		.loc 1 136 0
+ 152 0096 80E8      		ldi r24,lo8(-128)
+ 153 0098 00D0      		rcall FrameMgr_dispatchEvent
+ 154               	.LVL8:
+ 137:Executive.c   **** 					
+ 155               		.loc 1 137 0
+ 156 009a 00C0      		rjmp .L6
+ 157               	.L17:
+ 140:Executive.c   **** 					break;
+ 158               		.loc 1 140 0
+ 159 009c 81E8      		ldi r24,lo8(-127)
+ 160 009e 00D0      		rcall FrameMgr_dispatchEvent
+ 161               	.LVL9:
+ 141:Executive.c   **** 					
+ 162               		.loc 1 141 0
+ 163 00a0 00C0      		rjmp .L6
+ 164               	.L7:
+ 144:Executive.c   **** 					UIMgr_dispatchEvent(eventGenerated);
+ 165               		.loc 1 144 0
+ 166 00a2 80E1      		ldi r24,lo8(16)
+ 167 00a4 00D0      		rcall FrameMgr_dispatchEvent
+ 168               	.LVL10:
+ 145:Executive.c   **** 					break;
+ 169               		.loc 1 145 0
+ 170 00a6 80E1      		ldi r24,lo8(16)
+ 171 00a8 00D0      		rcall UIMgr_dispatchEvent
+ 172               	.LVL11:
+ 146:Executive.c   **** 					
+ 173               		.loc 1 146 0
+ 174 00aa 00C0      		rjmp .L6
+ 175               	.L16:
+ 149:Executive.c   **** 					break;
+ 176               		.loc 1 149 0
+ 177 00ac 80E2      		ldi r24,lo8(32)
+ 178 00ae 00D0      		rcall FrameMgr_dispatchEvent
+ 179               	.LVL12:
+ 150:Executive.c   **** 					
+ 180               		.loc 1 150 0
+ 181 00b0 00C0      		rjmp .L6
+ 182               	.L13:
+ 153:Executive.c   **** 					break;
+ 183               		.loc 1 153 0
+ 184 00b2 88E0      		ldi r24,lo8(8)
+ 185 00b4 00D0      		rcall FrameMgr_dispatchEvent
+ 186               	.LVL13:
+ 154:Executive.c   **** 				
+ 187               		.loc 1 154 0
+ 188 00b6 00C0      		rjmp .L6
+ 189               	.L12:
+ 157:Executive.c   **** 					break;
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s 			page 8
+
+
+ 190               		.loc 1 157 0
+ 191 00b8 84E0      		ldi r24,lo8(4)
+ 192 00ba 00D0      		rcall FrameMgr_dispatchEvent
+ 193               	.LVL14:
+ 158:Executive.c   **** 					
+ 194               		.loc 1 158 0
+ 195 00bc 00C0      		rjmp .L6
+ 196               	.L11:
+ 161:Executive.c   **** 					FrameMgr_dispatchEvent(eventGenerated);
+ 197               		.loc 1 161 0
+ 198 00be 81E0      		ldi r24,lo8(1)
+ 199 00c0 00D0      		rcall UIMgr_dispatchEvent
+ 200               	.LVL15:
+ 162:Executive.c   **** 					break;																
+ 201               		.loc 1 162 0
+ 202 00c2 81E0      		ldi r24,lo8(1)
+ 203 00c4 00D0      		rcall FrameMgr_dispatchEvent
+ 204               	.LVL16:
+ 163:Executive.c   **** 
+ 205               		.loc 1 163 0
+ 206 00c6 00C0      		rjmp .L6
+ 207               	.L18:
+ 166:Executive.c   **** 					break;
+ 208               		.loc 1 166 0
+ 209 00c8 80E9      		ldi r24,lo8(-112)
+ 210 00ca 00D0      		rcall UIMgr_dispatchEvent
+ 211               	.LVL17:
+ 167:Executive.c   **** 								
+ 212               		.loc 1 167 0
+ 213 00cc 00C0      		rjmp .L6
+ 214               		.cfi_endproc
+ 215               	.LFE4:
+ 216               		.size	Exec_run, .-Exec_run
+ 217               	.global	Exec_writeEventFifo
+ 218               		.type	Exec_writeEventFifo, @function
+ 219               	Exec_writeEventFifo:
+ 220               	.LFB6:
+ 196:Executive.c   **** 	
+ 197:Executive.c   **** 	return(dataByte);
+ 198:Executive.c   **** }
+ 199:Executive.c   **** 
+ 200:Executive.c   **** /***********************************************************
+ 201:Executive.c   **** 	Function Name: Exec_writeEventFifo
+ 202:Executive.c   **** 	Function Description: This function is responsible for
+ 203:Executive.c   **** 	writing a single event to the event fifo and
+ 204:Executive.c   **** 	updating the appropriate pointers.
+ 205:Executive.c   **** 	Inputs:  data - the byte to write to the Fifo 
+ 206:Executive.c   **** 	Outputs: none
+ 207:Executive.c   **** ***********************************************************/	
+ 208:Executive.c   **** void Exec_writeEventFifo(unsigned char event)
+ 209:Executive.c   **** {
+ 221               		.loc 1 209 0
+ 222               		.cfi_startproc
+ 223               	.LVL18:
+ 224               	/* prologue: function */
+ 225               	/* frame size = 0 */
+ 226               	/* stack size = 0 */
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s 			page 9
+
+
+ 227               	.L__stack_usage = 0
+ 210:Executive.c   **** 	unsigned char tmpHead;
+ 211:Executive.c   **** 
+ 212:Executive.c   **** 	DISABLE_INTS();
+ 228               		.loc 1 212 0
+ 229               	/* #APP */
+ 230               	 ;  212 "Executive.c" 1
+ 231 00ce F894      		cli
+ 232               	 ;  0 "" 2
+ 213:Executive.c   **** 	Exec_eventFifo[Exec_eventFifoHead] = event;
+ 233               		.loc 1 213 0
+ 234               	/* #NOAPP */
+ 235 00d0 9091 0000 		lds r25,Exec_eventFifoHead
+ 236 00d4 E92F      		mov r30,r25
+ 237 00d6 F0E0      		ldi r31,0
+ 238 00d8 E050      		subi r30,lo8(-(Exec_eventFifo))
+ 239 00da F040      		sbci r31,hi8(-(Exec_eventFifo))
+ 240 00dc 8083      		st Z,r24
+ 241               	.LVL19:
+ 214:Executive.c   **** 
+ 215:Executive.c   ****     /* now move the head up */
+ 216:Executive.c   ****     tmpHead = (Exec_eventFifoHead + 1) & (EXEC_EVENT_FIFO_MASK);
+ 217:Executive.c   ****     Exec_eventFifoHead = tmpHead;
+ 242               		.loc 1 217 0
+ 243 00de 9F5F      		subi r25,lo8(-(1))
+ 244               	.LVL20:
+ 245 00e0 9770      		andi r25,lo8(7)
+ 246               	.LVL21:
+ 247 00e2 9093 0000 		sts Exec_eventFifoHead,r25
+ 218:Executive.c   **** 	ENABLE_INTS();
+ 248               		.loc 1 218 0
+ 249               	/* #APP */
+ 250               	 ;  218 "Executive.c" 1
+ 251 00e6 7894      		sei
+ 252               	 ;  0 "" 2
+ 253               	/* #NOAPP */
+ 254 00e8 0895      		ret
+ 255               		.cfi_endproc
+ 256               	.LFE6:
+ 257               		.size	Exec_writeEventFifo, .-Exec_writeEventFifo
+ 258               	.global	fastEventBitmask
+ 259               		.section .bss
+ 260               		.type	fastEventBitmask, @object
+ 261               		.size	fastEventBitmask, 1
+ 262               	fastEventBitmask:
+ 263 0000 00        		.zero	1
+ 264               	.global	Exec_eventFifoTail
+ 265               		.type	Exec_eventFifoTail, @object
+ 266               		.size	Exec_eventFifoTail, 1
+ 267               	Exec_eventFifoTail:
+ 268 0001 00        		.zero	1
+ 269               	.global	Exec_eventFifoHead
+ 270               		.type	Exec_eventFifoHead, @object
+ 271               		.size	Exec_eventFifoHead, 1
+ 272               	Exec_eventFifoHead:
+ 273 0002 00        		.zero	1
+ 274               		.comm	Exec_eventFifo,8,1
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s 			page 10
+
+
+ 275               		.text
+ 276               	.Letext0:
+ 277               		.file 2 "FrameMgr.h"
+ 278               		.file 3 "UIMgr.h"
+ 279               		.file 4 "c:\\program files (x86)\\atmel\\studio\\7.0\\toolchain\\avr8\\avr8-gnu-toolchain\\avr\\in
+ 280               		.section	.debug_info,"",@progbits
+ 281               	.Ldebug_info0:
+ 282 0000 A902 0000 		.long	0x2a9
+ 283 0004 0200      		.word	0x2
+ 284 0006 0000 0000 		.long	.Ldebug_abbrev0
+ 285 000a 04        		.byte	0x4
+ 286 000b 01        		.uleb128 0x1
+ 287 000c 0000 0000 		.long	.LASF21
+ 288 0010 0C        		.byte	0xc
+ 289 0011 0000 0000 		.long	.LASF22
+ 290 0015 0000 0000 		.long	.LASF23
+ 291 0019 0000 0000 		.long	.Ltext0
+ 292 001d 0000 0000 		.long	.Letext0
+ 293 0021 0000 0000 		.long	.Ldebug_line0
+ 294 0025 02        		.uleb128 0x2
+ 295 0026 02        		.byte	0x2
+ 296 0027 07        		.byte	0x7
+ 297 0028 0000 0000 		.long	.LASF0
+ 298 002c 03        		.uleb128 0x3
+ 299 002d 02        		.byte	0x2
+ 300 002e 05        		.byte	0x5
+ 301 002f 696E 7400 		.string	"int"
+ 302 0033 02        		.uleb128 0x2
+ 303 0034 04        		.byte	0x4
+ 304 0035 05        		.byte	0x5
+ 305 0036 0000 0000 		.long	.LASF1
+ 306 003a 02        		.uleb128 0x2
+ 307 003b 01        		.byte	0x1
+ 308 003c 06        		.byte	0x6
+ 309 003d 0000 0000 		.long	.LASF2
+ 310 0041 04        		.uleb128 0x4
+ 311 0042 0000 0000 		.long	.LASF24
+ 312 0046 04        		.byte	0x4
+ 313 0047 7E        		.byte	0x7e
+ 314 0048 4C00 0000 		.long	0x4c
+ 315 004c 02        		.uleb128 0x2
+ 316 004d 01        		.byte	0x1
+ 317 004e 08        		.byte	0x8
+ 318 004f 0000 0000 		.long	.LASF3
+ 319 0053 02        		.uleb128 0x2
+ 320 0054 04        		.byte	0x4
+ 321 0055 07        		.byte	0x7
+ 322 0056 0000 0000 		.long	.LASF4
+ 323 005a 02        		.uleb128 0x2
+ 324 005b 08        		.byte	0x8
+ 325 005c 05        		.byte	0x5
+ 326 005d 0000 0000 		.long	.LASF5
+ 327 0061 02        		.uleb128 0x2
+ 328 0062 08        		.byte	0x8
+ 329 0063 07        		.byte	0x7
+ 330 0064 0000 0000 		.long	.LASF6
+ 331 0068 05        		.uleb128 0x5
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s 			page 11
+
+
+ 332 0069 0000 0000 		.long	.LASF25
+ 333 006d 01        		.byte	0x1
+ 334 006e BA        		.byte	0xba
+ 335 006f 01        		.byte	0x1
+ 336 0070 4C00 0000 		.long	0x4c
+ 337 0074 01        		.byte	0x1
+ 338 0075 9000 0000 		.long	0x90
+ 339 0079 06        		.uleb128 0x6
+ 340 007a 0000 0000 		.long	.LASF7
+ 341 007e 01        		.byte	0x1
+ 342 007f BC        		.byte	0xbc
+ 343 0080 4C00 0000 		.long	0x4c
+ 344 0084 06        		.uleb128 0x6
+ 345 0085 0000 0000 		.long	.LASF8
+ 346 0089 01        		.byte	0x1
+ 347 008a BC        		.byte	0xbc
+ 348 008b 4C00 0000 		.long	0x4c
+ 349 008f 00        		.byte	0
+ 350 0090 07        		.uleb128 0x7
+ 351 0091 01        		.byte	0x1
+ 352 0092 0000 0000 		.long	.LASF26
+ 353 0096 01        		.byte	0x1
+ 354 0097 59        		.byte	0x59
+ 355 0098 01        		.byte	0x1
+ 356 0099 01        		.byte	0x1
+ 357 009a 0000 0000 		.long	.LFB4
+ 358 009e 0000 0000 		.long	.LFE4
+ 359 00a2 03        		.byte	0x3
+ 360 00a3 92        		.byte	0x92
+ 361 00a4 20        		.uleb128 0x20
+ 362 00a5 02        		.sleb128 2
+ 363 00a6 01        		.byte	0x1
+ 364 00a7 D501 0000 		.long	0x1d5
+ 365 00ab 08        		.uleb128 0x8
+ 366 00ac 0000 0000 		.long	.LASF9
+ 367 00b0 01        		.byte	0x1
+ 368 00b1 5B        		.byte	0x5b
+ 369 00b2 4C00 0000 		.long	0x4c
+ 370 00b6 01        		.byte	0x1
+ 371 00b7 69        		.byte	0x69
+ 372 00b8 09        		.uleb128 0x9
+ 373 00b9 6800 0000 		.long	0x68
+ 374 00bd 0000 0000 		.long	.LBB4
+ 375 00c1 0000 0000 		.long	.LBE4
+ 376 00c5 01        		.byte	0x1
+ 377 00c6 80        		.byte	0x80
+ 378 00c7 E800 0000 		.long	0xe8
+ 379 00cb 0A        		.uleb128 0xa
+ 380 00cc 0000 0000 		.long	.LBB5
+ 381 00d0 0000 0000 		.long	.LBE5
+ 382 00d4 0B        		.uleb128 0xb
+ 383 00d5 7900 0000 		.long	0x79
+ 384 00d9 0000 0000 		.long	.LLST0
+ 385 00dd 0B        		.uleb128 0xb
+ 386 00de 8400 0000 		.long	0x84
+ 387 00e2 0000 0000 		.long	.LLST1
+ 388 00e6 00        		.byte	0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s 			page 12
+
+
+ 389 00e7 00        		.byte	0
+ 390 00e8 0C        		.uleb128 0xc
+ 391 00e9 0000 0000 		.long	.LVL0
+ 392 00ed 6B02 0000 		.long	0x26b
+ 393 00f1 0C        		.uleb128 0xc
+ 394 00f2 0000 0000 		.long	.LVL1
+ 395 00f6 7802 0000 		.long	0x278
+ 396 00fa 0C        		.uleb128 0xc
+ 397 00fb 0000 0000 		.long	.LVL2
+ 398 00ff 8502 0000 		.long	0x285
+ 399 0103 0D        		.uleb128 0xd
+ 400 0104 0000 0000 		.long	.LVL7
+ 401 0108 9202 0000 		.long	0x292
+ 402 010c 1601 0000 		.long	0x116
+ 403 0110 0E        		.uleb128 0xe
+ 404 0111 01        		.byte	0x1
+ 405 0112 68        		.byte	0x68
+ 406 0113 01        		.byte	0x1
+ 407 0114 32        		.byte	0x32
+ 408 0115 00        		.byte	0
+ 409 0116 0D        		.uleb128 0xd
+ 410 0117 0000 0000 		.long	.LVL8
+ 411 011b 9202 0000 		.long	0x292
+ 412 011f 2A01 0000 		.long	0x12a
+ 413 0123 0E        		.uleb128 0xe
+ 414 0124 01        		.byte	0x1
+ 415 0125 68        		.byte	0x68
+ 416 0126 02        		.byte	0x2
+ 417 0127 09        		.byte	0x9
+ 418 0128 80        		.byte	0x80
+ 419 0129 00        		.byte	0
+ 420 012a 0D        		.uleb128 0xd
+ 421 012b 0000 0000 		.long	.LVL9
+ 422 012f 9202 0000 		.long	0x292
+ 423 0133 3E01 0000 		.long	0x13e
+ 424 0137 0E        		.uleb128 0xe
+ 425 0138 01        		.byte	0x1
+ 426 0139 68        		.byte	0x68
+ 427 013a 02        		.byte	0x2
+ 428 013b 09        		.byte	0x9
+ 429 013c 81        		.byte	0x81
+ 430 013d 00        		.byte	0
+ 431 013e 0D        		.uleb128 0xd
+ 432 013f 0000 0000 		.long	.LVL10
+ 433 0143 9202 0000 		.long	0x292
+ 434 0147 5101 0000 		.long	0x151
+ 435 014b 0E        		.uleb128 0xe
+ 436 014c 01        		.byte	0x1
+ 437 014d 68        		.byte	0x68
+ 438 014e 01        		.byte	0x1
+ 439 014f 40        		.byte	0x40
+ 440 0150 00        		.byte	0
+ 441 0151 0D        		.uleb128 0xd
+ 442 0152 0000 0000 		.long	.LVL11
+ 443 0156 9F02 0000 		.long	0x29f
+ 444 015a 6401 0000 		.long	0x164
+ 445 015e 0E        		.uleb128 0xe
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s 			page 13
+
+
+ 446 015f 01        		.byte	0x1
+ 447 0160 68        		.byte	0x68
+ 448 0161 01        		.byte	0x1
+ 449 0162 40        		.byte	0x40
+ 450 0163 00        		.byte	0
+ 451 0164 0D        		.uleb128 0xd
+ 452 0165 0000 0000 		.long	.LVL12
+ 453 0169 9202 0000 		.long	0x292
+ 454 016d 7801 0000 		.long	0x178
+ 455 0171 0E        		.uleb128 0xe
+ 456 0172 01        		.byte	0x1
+ 457 0173 68        		.byte	0x68
+ 458 0174 02        		.byte	0x2
+ 459 0175 08        		.byte	0x8
+ 460 0176 20        		.byte	0x20
+ 461 0177 00        		.byte	0
+ 462 0178 0D        		.uleb128 0xd
+ 463 0179 0000 0000 		.long	.LVL13
+ 464 017d 9202 0000 		.long	0x292
+ 465 0181 8B01 0000 		.long	0x18b
+ 466 0185 0E        		.uleb128 0xe
+ 467 0186 01        		.byte	0x1
+ 468 0187 68        		.byte	0x68
+ 469 0188 01        		.byte	0x1
+ 470 0189 38        		.byte	0x38
+ 471 018a 00        		.byte	0
+ 472 018b 0D        		.uleb128 0xd
+ 473 018c 0000 0000 		.long	.LVL14
+ 474 0190 9202 0000 		.long	0x292
+ 475 0194 9E01 0000 		.long	0x19e
+ 476 0198 0E        		.uleb128 0xe
+ 477 0199 01        		.byte	0x1
+ 478 019a 68        		.byte	0x68
+ 479 019b 01        		.byte	0x1
+ 480 019c 34        		.byte	0x34
+ 481 019d 00        		.byte	0
+ 482 019e 0D        		.uleb128 0xd
+ 483 019f 0000 0000 		.long	.LVL15
+ 484 01a3 9F02 0000 		.long	0x29f
+ 485 01a7 B101 0000 		.long	0x1b1
+ 486 01ab 0E        		.uleb128 0xe
+ 487 01ac 01        		.byte	0x1
+ 488 01ad 68        		.byte	0x68
+ 489 01ae 01        		.byte	0x1
+ 490 01af 31        		.byte	0x31
+ 491 01b0 00        		.byte	0
+ 492 01b1 0D        		.uleb128 0xd
+ 493 01b2 0000 0000 		.long	.LVL16
+ 494 01b6 9202 0000 		.long	0x292
+ 495 01ba C401 0000 		.long	0x1c4
+ 496 01be 0E        		.uleb128 0xe
+ 497 01bf 01        		.byte	0x1
+ 498 01c0 68        		.byte	0x68
+ 499 01c1 01        		.byte	0x1
+ 500 01c2 31        		.byte	0x31
+ 501 01c3 00        		.byte	0
+ 502 01c4 0F        		.uleb128 0xf
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s 			page 14
+
+
+ 503 01c5 0000 0000 		.long	.LVL17
+ 504 01c9 9F02 0000 		.long	0x29f
+ 505 01cd 0E        		.uleb128 0xe
+ 506 01ce 01        		.byte	0x1
+ 507 01cf 68        		.byte	0x68
+ 508 01d0 02        		.byte	0x2
+ 509 01d1 09        		.byte	0x9
+ 510 01d2 90        		.byte	0x90
+ 511 01d3 00        		.byte	0
+ 512 01d4 00        		.byte	0
+ 513 01d5 10        		.uleb128 0x10
+ 514 01d6 01        		.byte	0x1
+ 515 01d7 0000 0000 		.long	.LASF27
+ 516 01db 01        		.byte	0x1
+ 517 01dc D0        		.byte	0xd0
+ 518 01dd 01        		.byte	0x1
+ 519 01de 0000 0000 		.long	.LFB6
+ 520 01e2 0000 0000 		.long	.LFE6
+ 521 01e6 03        		.byte	0x3
+ 522 01e7 92        		.byte	0x92
+ 523 01e8 20        		.uleb128 0x20
+ 524 01e9 02        		.sleb128 2
+ 525 01ea 01        		.byte	0x1
+ 526 01eb 0C02 0000 		.long	0x20c
+ 527 01ef 11        		.uleb128 0x11
+ 528 01f0 0000 0000 		.long	.LASF28
+ 529 01f4 01        		.byte	0x1
+ 530 01f5 D0        		.byte	0xd0
+ 531 01f6 4C00 0000 		.long	0x4c
+ 532 01fa 01        		.byte	0x1
+ 533 01fb 68        		.byte	0x68
+ 534 01fc 12        		.uleb128 0x12
+ 535 01fd 0000 0000 		.long	.LASF10
+ 536 0201 01        		.byte	0x1
+ 537 0202 D2        		.byte	0xd2
+ 538 0203 4C00 0000 		.long	0x4c
+ 539 0207 0000 0000 		.long	.LLST2
+ 540 020b 00        		.byte	0
+ 541 020c 13        		.uleb128 0x13
+ 542 020d 0000 0000 		.long	.LASF12
+ 543 0211 01        		.byte	0x1
+ 544 0212 4A        		.byte	0x4a
+ 545 0213 4C00 0000 		.long	0x4c
+ 546 0217 01        		.byte	0x1
+ 547 0218 05        		.byte	0x5
+ 548 0219 03        		.byte	0x3
+ 549 021a 0000 0000 		.long	fastEventBitmask
+ 550 021e 14        		.uleb128 0x14
+ 551 021f 4C00 0000 		.long	0x4c
+ 552 0223 2E02 0000 		.long	0x22e
+ 553 0227 15        		.uleb128 0x15
+ 554 0228 2E02 0000 		.long	0x22e
+ 555 022c 07        		.byte	0x7
+ 556 022d 00        		.byte	0
+ 557 022e 02        		.uleb128 0x2
+ 558 022f 02        		.byte	0x2
+ 559 0230 07        		.byte	0x7
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s 			page 15
+
+
+ 560 0231 0000 0000 		.long	.LASF11
+ 561 0235 13        		.uleb128 0x13
+ 562 0236 0000 0000 		.long	.LASF13
+ 563 023a 01        		.byte	0x1
+ 564 023b 3F        		.byte	0x3f
+ 565 023c 1E02 0000 		.long	0x21e
+ 566 0240 01        		.byte	0x1
+ 567 0241 05        		.byte	0x5
+ 568 0242 03        		.byte	0x3
+ 569 0243 0000 0000 		.long	Exec_eventFifo
+ 570 0247 13        		.uleb128 0x13
+ 571 0248 0000 0000 		.long	.LASF14
+ 572 024c 01        		.byte	0x1
+ 573 024d 40        		.byte	0x40
+ 574 024e 4C00 0000 		.long	0x4c
+ 575 0252 01        		.byte	0x1
+ 576 0253 05        		.byte	0x5
+ 577 0254 03        		.byte	0x3
+ 578 0255 0000 0000 		.long	Exec_eventFifoHead
+ 579 0259 13        		.uleb128 0x13
+ 580 025a 0000 0000 		.long	.LASF15
+ 581 025e 01        		.byte	0x1
+ 582 025f 41        		.byte	0x41
+ 583 0260 4C00 0000 		.long	0x4c
+ 584 0264 01        		.byte	0x1
+ 585 0265 05        		.byte	0x5
+ 586 0266 03        		.byte	0x3
+ 587 0267 0000 0000 		.long	Exec_eventFifoTail
+ 588 026b 16        		.uleb128 0x16
+ 589 026c 01        		.byte	0x1
+ 590 026d 01        		.byte	0x1
+ 591 026e 0000 0000 		.long	.LASF16
+ 592 0272 0000 0000 		.long	.LASF16
+ 593 0276 02        		.byte	0x2
+ 594 0277 32        		.byte	0x32
+ 595 0278 16        		.uleb128 0x16
+ 596 0279 01        		.byte	0x1
+ 597 027a 01        		.byte	0x1
+ 598 027b 0000 0000 		.long	.LASF17
+ 599 027f 0000 0000 		.long	.LASF17
+ 600 0283 03        		.byte	0x3
+ 601 0284 44        		.byte	0x44
+ 602 0285 16        		.uleb128 0x16
+ 603 0286 01        		.byte	0x1
+ 604 0287 01        		.byte	0x1
+ 605 0288 0000 0000 		.long	.LASF18
+ 606 028c 0000 0000 		.long	.LASF18
+ 607 0290 02        		.byte	0x2
+ 608 0291 34        		.byte	0x34
+ 609 0292 16        		.uleb128 0x16
+ 610 0293 01        		.byte	0x1
+ 611 0294 01        		.byte	0x1
+ 612 0295 0000 0000 		.long	.LASF19
+ 613 0299 0000 0000 		.long	.LASF19
+ 614 029d 02        		.byte	0x2
+ 615 029e 36        		.byte	0x36
+ 616 029f 16        		.uleb128 0x16
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s 			page 16
+
+
+ 617 02a0 01        		.byte	0x1
+ 618 02a1 01        		.byte	0x1
+ 619 02a2 0000 0000 		.long	.LASF20
+ 620 02a6 0000 0000 		.long	.LASF20
+ 621 02aa 03        		.byte	0x3
+ 622 02ab 45        		.byte	0x45
+ 623 02ac 00        		.byte	0
+ 624               		.section	.debug_abbrev,"",@progbits
+ 625               	.Ldebug_abbrev0:
+ 626 0000 01        		.uleb128 0x1
+ 627 0001 11        		.uleb128 0x11
+ 628 0002 01        		.byte	0x1
+ 629 0003 25        		.uleb128 0x25
+ 630 0004 0E        		.uleb128 0xe
+ 631 0005 13        		.uleb128 0x13
+ 632 0006 0B        		.uleb128 0xb
+ 633 0007 03        		.uleb128 0x3
+ 634 0008 0E        		.uleb128 0xe
+ 635 0009 1B        		.uleb128 0x1b
+ 636 000a 0E        		.uleb128 0xe
+ 637 000b 11        		.uleb128 0x11
+ 638 000c 01        		.uleb128 0x1
+ 639 000d 12        		.uleb128 0x12
+ 640 000e 01        		.uleb128 0x1
+ 641 000f 10        		.uleb128 0x10
+ 642 0010 06        		.uleb128 0x6
+ 643 0011 00        		.byte	0
+ 644 0012 00        		.byte	0
+ 645 0013 02        		.uleb128 0x2
+ 646 0014 24        		.uleb128 0x24
+ 647 0015 00        		.byte	0
+ 648 0016 0B        		.uleb128 0xb
+ 649 0017 0B        		.uleb128 0xb
+ 650 0018 3E        		.uleb128 0x3e
+ 651 0019 0B        		.uleb128 0xb
+ 652 001a 03        		.uleb128 0x3
+ 653 001b 0E        		.uleb128 0xe
+ 654 001c 00        		.byte	0
+ 655 001d 00        		.byte	0
+ 656 001e 03        		.uleb128 0x3
+ 657 001f 24        		.uleb128 0x24
+ 658 0020 00        		.byte	0
+ 659 0021 0B        		.uleb128 0xb
+ 660 0022 0B        		.uleb128 0xb
+ 661 0023 3E        		.uleb128 0x3e
+ 662 0024 0B        		.uleb128 0xb
+ 663 0025 03        		.uleb128 0x3
+ 664 0026 08        		.uleb128 0x8
+ 665 0027 00        		.byte	0
+ 666 0028 00        		.byte	0
+ 667 0029 04        		.uleb128 0x4
+ 668 002a 16        		.uleb128 0x16
+ 669 002b 00        		.byte	0
+ 670 002c 03        		.uleb128 0x3
+ 671 002d 0E        		.uleb128 0xe
+ 672 002e 3A        		.uleb128 0x3a
+ 673 002f 0B        		.uleb128 0xb
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s 			page 17
+
+
+ 674 0030 3B        		.uleb128 0x3b
+ 675 0031 0B        		.uleb128 0xb
+ 676 0032 49        		.uleb128 0x49
+ 677 0033 13        		.uleb128 0x13
+ 678 0034 00        		.byte	0
+ 679 0035 00        		.byte	0
+ 680 0036 05        		.uleb128 0x5
+ 681 0037 2E        		.uleb128 0x2e
+ 682 0038 01        		.byte	0x1
+ 683 0039 03        		.uleb128 0x3
+ 684 003a 0E        		.uleb128 0xe
+ 685 003b 3A        		.uleb128 0x3a
+ 686 003c 0B        		.uleb128 0xb
+ 687 003d 3B        		.uleb128 0x3b
+ 688 003e 0B        		.uleb128 0xb
+ 689 003f 27        		.uleb128 0x27
+ 690 0040 0C        		.uleb128 0xc
+ 691 0041 49        		.uleb128 0x49
+ 692 0042 13        		.uleb128 0x13
+ 693 0043 20        		.uleb128 0x20
+ 694 0044 0B        		.uleb128 0xb
+ 695 0045 01        		.uleb128 0x1
+ 696 0046 13        		.uleb128 0x13
+ 697 0047 00        		.byte	0
+ 698 0048 00        		.byte	0
+ 699 0049 06        		.uleb128 0x6
+ 700 004a 34        		.uleb128 0x34
+ 701 004b 00        		.byte	0
+ 702 004c 03        		.uleb128 0x3
+ 703 004d 0E        		.uleb128 0xe
+ 704 004e 3A        		.uleb128 0x3a
+ 705 004f 0B        		.uleb128 0xb
+ 706 0050 3B        		.uleb128 0x3b
+ 707 0051 0B        		.uleb128 0xb
+ 708 0052 49        		.uleb128 0x49
+ 709 0053 13        		.uleb128 0x13
+ 710 0054 00        		.byte	0
+ 711 0055 00        		.byte	0
+ 712 0056 07        		.uleb128 0x7
+ 713 0057 2E        		.uleb128 0x2e
+ 714 0058 01        		.byte	0x1
+ 715 0059 3F        		.uleb128 0x3f
+ 716 005a 0C        		.uleb128 0xc
+ 717 005b 03        		.uleb128 0x3
+ 718 005c 0E        		.uleb128 0xe
+ 719 005d 3A        		.uleb128 0x3a
+ 720 005e 0B        		.uleb128 0xb
+ 721 005f 3B        		.uleb128 0x3b
+ 722 0060 0B        		.uleb128 0xb
+ 723 0061 27        		.uleb128 0x27
+ 724 0062 0C        		.uleb128 0xc
+ 725 0063 8701      		.uleb128 0x87
+ 726 0065 0C        		.uleb128 0xc
+ 727 0066 11        		.uleb128 0x11
+ 728 0067 01        		.uleb128 0x1
+ 729 0068 12        		.uleb128 0x12
+ 730 0069 01        		.uleb128 0x1
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s 			page 18
+
+
+ 731 006a 40        		.uleb128 0x40
+ 732 006b 0A        		.uleb128 0xa
+ 733 006c 9742      		.uleb128 0x2117
+ 734 006e 0C        		.uleb128 0xc
+ 735 006f 01        		.uleb128 0x1
+ 736 0070 13        		.uleb128 0x13
+ 737 0071 00        		.byte	0
+ 738 0072 00        		.byte	0
+ 739 0073 08        		.uleb128 0x8
+ 740 0074 34        		.uleb128 0x34
+ 741 0075 00        		.byte	0
+ 742 0076 03        		.uleb128 0x3
+ 743 0077 0E        		.uleb128 0xe
+ 744 0078 3A        		.uleb128 0x3a
+ 745 0079 0B        		.uleb128 0xb
+ 746 007a 3B        		.uleb128 0x3b
+ 747 007b 0B        		.uleb128 0xb
+ 748 007c 49        		.uleb128 0x49
+ 749 007d 13        		.uleb128 0x13
+ 750 007e 02        		.uleb128 0x2
+ 751 007f 0A        		.uleb128 0xa
+ 752 0080 00        		.byte	0
+ 753 0081 00        		.byte	0
+ 754 0082 09        		.uleb128 0x9
+ 755 0083 1D        		.uleb128 0x1d
+ 756 0084 01        		.byte	0x1
+ 757 0085 31        		.uleb128 0x31
+ 758 0086 13        		.uleb128 0x13
+ 759 0087 11        		.uleb128 0x11
+ 760 0088 01        		.uleb128 0x1
+ 761 0089 12        		.uleb128 0x12
+ 762 008a 01        		.uleb128 0x1
+ 763 008b 58        		.uleb128 0x58
+ 764 008c 0B        		.uleb128 0xb
+ 765 008d 59        		.uleb128 0x59
+ 766 008e 0B        		.uleb128 0xb
+ 767 008f 01        		.uleb128 0x1
+ 768 0090 13        		.uleb128 0x13
+ 769 0091 00        		.byte	0
+ 770 0092 00        		.byte	0
+ 771 0093 0A        		.uleb128 0xa
+ 772 0094 0B        		.uleb128 0xb
+ 773 0095 01        		.byte	0x1
+ 774 0096 11        		.uleb128 0x11
+ 775 0097 01        		.uleb128 0x1
+ 776 0098 12        		.uleb128 0x12
+ 777 0099 01        		.uleb128 0x1
+ 778 009a 00        		.byte	0
+ 779 009b 00        		.byte	0
+ 780 009c 0B        		.uleb128 0xb
+ 781 009d 34        		.uleb128 0x34
+ 782 009e 00        		.byte	0
+ 783 009f 31        		.uleb128 0x31
+ 784 00a0 13        		.uleb128 0x13
+ 785 00a1 02        		.uleb128 0x2
+ 786 00a2 06        		.uleb128 0x6
+ 787 00a3 00        		.byte	0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s 			page 19
+
+
+ 788 00a4 00        		.byte	0
+ 789 00a5 0C        		.uleb128 0xc
+ 790 00a6 8982 01   		.uleb128 0x4109
+ 791 00a9 00        		.byte	0
+ 792 00aa 11        		.uleb128 0x11
+ 793 00ab 01        		.uleb128 0x1
+ 794 00ac 31        		.uleb128 0x31
+ 795 00ad 13        		.uleb128 0x13
+ 796 00ae 00        		.byte	0
+ 797 00af 00        		.byte	0
+ 798 00b0 0D        		.uleb128 0xd
+ 799 00b1 8982 01   		.uleb128 0x4109
+ 800 00b4 01        		.byte	0x1
+ 801 00b5 11        		.uleb128 0x11
+ 802 00b6 01        		.uleb128 0x1
+ 803 00b7 31        		.uleb128 0x31
+ 804 00b8 13        		.uleb128 0x13
+ 805 00b9 01        		.uleb128 0x1
+ 806 00ba 13        		.uleb128 0x13
+ 807 00bb 00        		.byte	0
+ 808 00bc 00        		.byte	0
+ 809 00bd 0E        		.uleb128 0xe
+ 810 00be 8A82 01   		.uleb128 0x410a
+ 811 00c1 00        		.byte	0
+ 812 00c2 02        		.uleb128 0x2
+ 813 00c3 0A        		.uleb128 0xa
+ 814 00c4 9142      		.uleb128 0x2111
+ 815 00c6 0A        		.uleb128 0xa
+ 816 00c7 00        		.byte	0
+ 817 00c8 00        		.byte	0
+ 818 00c9 0F        		.uleb128 0xf
+ 819 00ca 8982 01   		.uleb128 0x4109
+ 820 00cd 01        		.byte	0x1
+ 821 00ce 11        		.uleb128 0x11
+ 822 00cf 01        		.uleb128 0x1
+ 823 00d0 31        		.uleb128 0x31
+ 824 00d1 13        		.uleb128 0x13
+ 825 00d2 00        		.byte	0
+ 826 00d3 00        		.byte	0
+ 827 00d4 10        		.uleb128 0x10
+ 828 00d5 2E        		.uleb128 0x2e
+ 829 00d6 01        		.byte	0x1
+ 830 00d7 3F        		.uleb128 0x3f
+ 831 00d8 0C        		.uleb128 0xc
+ 832 00d9 03        		.uleb128 0x3
+ 833 00da 0E        		.uleb128 0xe
+ 834 00db 3A        		.uleb128 0x3a
+ 835 00dc 0B        		.uleb128 0xb
+ 836 00dd 3B        		.uleb128 0x3b
+ 837 00de 0B        		.uleb128 0xb
+ 838 00df 27        		.uleb128 0x27
+ 839 00e0 0C        		.uleb128 0xc
+ 840 00e1 11        		.uleb128 0x11
+ 841 00e2 01        		.uleb128 0x1
+ 842 00e3 12        		.uleb128 0x12
+ 843 00e4 01        		.uleb128 0x1
+ 844 00e5 40        		.uleb128 0x40
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s 			page 20
+
+
+ 845 00e6 0A        		.uleb128 0xa
+ 846 00e7 9742      		.uleb128 0x2117
+ 847 00e9 0C        		.uleb128 0xc
+ 848 00ea 01        		.uleb128 0x1
+ 849 00eb 13        		.uleb128 0x13
+ 850 00ec 00        		.byte	0
+ 851 00ed 00        		.byte	0
+ 852 00ee 11        		.uleb128 0x11
+ 853 00ef 05        		.uleb128 0x5
+ 854 00f0 00        		.byte	0
+ 855 00f1 03        		.uleb128 0x3
+ 856 00f2 0E        		.uleb128 0xe
+ 857 00f3 3A        		.uleb128 0x3a
+ 858 00f4 0B        		.uleb128 0xb
+ 859 00f5 3B        		.uleb128 0x3b
+ 860 00f6 0B        		.uleb128 0xb
+ 861 00f7 49        		.uleb128 0x49
+ 862 00f8 13        		.uleb128 0x13
+ 863 00f9 02        		.uleb128 0x2
+ 864 00fa 0A        		.uleb128 0xa
+ 865 00fb 00        		.byte	0
+ 866 00fc 00        		.byte	0
+ 867 00fd 12        		.uleb128 0x12
+ 868 00fe 34        		.uleb128 0x34
+ 869 00ff 00        		.byte	0
+ 870 0100 03        		.uleb128 0x3
+ 871 0101 0E        		.uleb128 0xe
+ 872 0102 3A        		.uleb128 0x3a
+ 873 0103 0B        		.uleb128 0xb
+ 874 0104 3B        		.uleb128 0x3b
+ 875 0105 0B        		.uleb128 0xb
+ 876 0106 49        		.uleb128 0x49
+ 877 0107 13        		.uleb128 0x13
+ 878 0108 02        		.uleb128 0x2
+ 879 0109 06        		.uleb128 0x6
+ 880 010a 00        		.byte	0
+ 881 010b 00        		.byte	0
+ 882 010c 13        		.uleb128 0x13
+ 883 010d 34        		.uleb128 0x34
+ 884 010e 00        		.byte	0
+ 885 010f 03        		.uleb128 0x3
+ 886 0110 0E        		.uleb128 0xe
+ 887 0111 3A        		.uleb128 0x3a
+ 888 0112 0B        		.uleb128 0xb
+ 889 0113 3B        		.uleb128 0x3b
+ 890 0114 0B        		.uleb128 0xb
+ 891 0115 49        		.uleb128 0x49
+ 892 0116 13        		.uleb128 0x13
+ 893 0117 3F        		.uleb128 0x3f
+ 894 0118 0C        		.uleb128 0xc
+ 895 0119 02        		.uleb128 0x2
+ 896 011a 0A        		.uleb128 0xa
+ 897 011b 00        		.byte	0
+ 898 011c 00        		.byte	0
+ 899 011d 14        		.uleb128 0x14
+ 900 011e 01        		.uleb128 0x1
+ 901 011f 01        		.byte	0x1
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s 			page 21
+
+
+ 902 0120 49        		.uleb128 0x49
+ 903 0121 13        		.uleb128 0x13
+ 904 0122 01        		.uleb128 0x1
+ 905 0123 13        		.uleb128 0x13
+ 906 0124 00        		.byte	0
+ 907 0125 00        		.byte	0
+ 908 0126 15        		.uleb128 0x15
+ 909 0127 21        		.uleb128 0x21
+ 910 0128 00        		.byte	0
+ 911 0129 49        		.uleb128 0x49
+ 912 012a 13        		.uleb128 0x13
+ 913 012b 2F        		.uleb128 0x2f
+ 914 012c 0B        		.uleb128 0xb
+ 915 012d 00        		.byte	0
+ 916 012e 00        		.byte	0
+ 917 012f 16        		.uleb128 0x16
+ 918 0130 2E        		.uleb128 0x2e
+ 919 0131 00        		.byte	0
+ 920 0132 3F        		.uleb128 0x3f
+ 921 0133 0C        		.uleb128 0xc
+ 922 0134 3C        		.uleb128 0x3c
+ 923 0135 0C        		.uleb128 0xc
+ 924 0136 8740      		.uleb128 0x2007
+ 925 0138 0E        		.uleb128 0xe
+ 926 0139 03        		.uleb128 0x3
+ 927 013a 0E        		.uleb128 0xe
+ 928 013b 3A        		.uleb128 0x3a
+ 929 013c 0B        		.uleb128 0xb
+ 930 013d 3B        		.uleb128 0x3b
+ 931 013e 0B        		.uleb128 0xb
+ 932 013f 00        		.byte	0
+ 933 0140 00        		.byte	0
+ 934 0141 00        		.byte	0
+ 935               		.section	.debug_loc,"",@progbits
+ 936               	.Ldebug_loc0:
+ 937               	.LLST0:
+ 938 0000 5400 0000 		.long	.LVL3-.Ltext0
+ 939 0004 5E00 0000 		.long	.LVL6-.Ltext0
+ 940 0008 0100      		.word	0x1
+ 941 000a 69        		.byte	0x69
+ 942 000b 0000 0000 		.long	0
+ 943 000f 0000 0000 		.long	0
+ 944               	.LLST1:
+ 945 0013 5400 0000 		.long	.LVL3-.Ltext0
+ 946 0017 5600 0000 		.long	.LVL4-.Ltext0
+ 947 001b 0500      		.word	0x5
+ 948 001d 88        		.byte	0x88
+ 949 001e 01        		.sleb128 1
+ 950 001f 37        		.byte	0x37
+ 951 0020 1A        		.byte	0x1a
+ 952 0021 9F        		.byte	0x9f
+ 953 0022 5600 0000 		.long	.LVL4-.Ltext0
+ 954 0026 5800 0000 		.long	.LVL5-.Ltext0
+ 955 002a 0C00      		.word	0xc
+ 956 002c 03        		.byte	0x3
+ 957 002d 0000 0000 		.long	Exec_eventFifoTail
+ 958 0031 94        		.byte	0x94
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s 			page 22
+
+
+ 959 0032 01        		.byte	0x1
+ 960 0033 23        		.byte	0x23
+ 961 0034 01        		.uleb128 0x1
+ 962 0035 37        		.byte	0x37
+ 963 0036 1A        		.byte	0x1a
+ 964 0037 9F        		.byte	0x9f
+ 965 0038 5800 0000 		.long	.LVL5-.Ltext0
+ 966 003c 5E00 0000 		.long	.LVL6-.Ltext0
+ 967 0040 0100      		.word	0x1
+ 968 0042 68        		.byte	0x68
+ 969 0043 0000 0000 		.long	0
+ 970 0047 0000 0000 		.long	0
+ 971               	.LLST2:
+ 972 004b DE00 0000 		.long	.LVL19-.Ltext0
+ 973 004f E000 0000 		.long	.LVL20-.Ltext0
+ 974 0053 0500      		.word	0x5
+ 975 0055 89        		.byte	0x89
+ 976 0056 01        		.sleb128 1
+ 977 0057 37        		.byte	0x37
+ 978 0058 1A        		.byte	0x1a
+ 979 0059 9F        		.byte	0x9f
+ 980 005a E000 0000 		.long	.LVL20-.Ltext0
+ 981 005e E200 0000 		.long	.LVL21-.Ltext0
+ 982 0062 0C00      		.word	0xc
+ 983 0064 03        		.byte	0x3
+ 984 0065 0000 0000 		.long	Exec_eventFifoHead
+ 985 0069 94        		.byte	0x94
+ 986 006a 01        		.byte	0x1
+ 987 006b 23        		.byte	0x23
+ 988 006c 01        		.uleb128 0x1
+ 989 006d 37        		.byte	0x37
+ 990 006e 1A        		.byte	0x1a
+ 991 006f 9F        		.byte	0x9f
+ 992 0070 E200 0000 		.long	.LVL21-.Ltext0
+ 993 0074 EA00 0000 		.long	.LFE6-.Ltext0
+ 994 0078 0100      		.word	0x1
+ 995 007a 69        		.byte	0x69
+ 996 007b 0000 0000 		.long	0
+ 997 007f 0000 0000 		.long	0
+ 998               		.section	.debug_aranges,"",@progbits
+ 999 0000 1C00 0000 		.long	0x1c
+ 1000 0004 0200      		.word	0x2
+ 1001 0006 0000 0000 		.long	.Ldebug_info0
+ 1002 000a 04        		.byte	0x4
+ 1003 000b 00        		.byte	0
+ 1004 000c 0000      		.word	0
+ 1005 000e 0000      		.word	0
+ 1006 0010 0000 0000 		.long	.Ltext0
+ 1007 0014 EA00 0000 		.long	.Letext0-.Ltext0
+ 1008 0018 0000 0000 		.long	0
+ 1009 001c 0000 0000 		.long	0
+ 1010               		.section	.debug_line,"",@progbits
+ 1011               	.Ldebug_line0:
+ 1012 0000 BA01 0000 		.section	.debug_str,"MS",@progbits,1
+ 1012      0200 9A00 
+ 1012      0000 0201 
+ 1012      FB0E 0A00 
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s 			page 23
+
+
+ 1012      0101 0101 
+ 1013               	.LASF13:
+ 1014 0000 4578 6563 		.string	"Exec_eventFifo"
+ 1014      5F65 7665 
+ 1014      6E74 4669 
+ 1014      666F 00
+ 1015               	.LASF15:
+ 1016 000f 4578 6563 		.string	"Exec_eventFifoTail"
+ 1016      5F65 7665 
+ 1016      6E74 4669 
+ 1016      666F 5461 
+ 1016      696C 00
+ 1017               	.LASF12:
+ 1018 0022 6661 7374 		.string	"fastEventBitmask"
+ 1018      4576 656E 
+ 1018      7442 6974 
+ 1018      6D61 736B 
+ 1018      00
+ 1019               	.LASF16:
+ 1020 0033 4672 616D 		.string	"FrameMgr_processLine"
+ 1020      654D 6772 
+ 1020      5F70 726F 
+ 1020      6365 7373 
+ 1020      4C69 6E65 
+ 1021               	.LASF3:
+ 1022 0048 756E 7369 		.string	"unsigned char"
+ 1022      676E 6564 
+ 1022      2063 6861 
+ 1022      7200 
+ 1023               	.LASF22:
+ 1024 0056 4578 6563 		.string	"Executive.c"
+ 1024      7574 6976 
+ 1024      652E 6300 
+ 1025               	.LASF17:
+ 1026 0062 5549 4D67 		.string	"UIMgr_transmitPendingData"
+ 1026      725F 7472 
+ 1026      616E 736D 
+ 1026      6974 5065 
+ 1026      6E64 696E 
+ 1027               	.LASF20:
+ 1028 007c 5549 4D67 		.string	"UIMgr_dispatchEvent"
+ 1028      725F 6469 
+ 1028      7370 6174 
+ 1028      6368 4576 
+ 1028      656E 7400 
+ 1029               	.LASF7:
+ 1030 0090 6461 7461 		.string	"dataByte"
+ 1030      4279 7465 
+ 1030      00
+ 1031               	.LASF4:
+ 1032 0099 6C6F 6E67 		.string	"long unsigned int"
+ 1032      2075 6E73 
+ 1032      6967 6E65 
+ 1032      6420 696E 
+ 1032      7400 
+ 1033               	.LASF23:
+ 1034 00ab 433A 5C77 		.string	"C:\\workspace\\AVRcam\\MainController"
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s 			page 24
+
+
+ 1034      6F72 6B73 
+ 1034      7061 6365 
+ 1034      5C41 5652 
+ 1034      6361 6D5C 
+ 1035               	.LASF19:
+ 1036 00ce 4672 616D 		.string	"FrameMgr_dispatchEvent"
+ 1036      654D 6772 
+ 1036      5F64 6973 
+ 1036      7061 7463 
+ 1036      6845 7665 
+ 1037               	.LASF28:
+ 1038 00e5 6576 656E 		.string	"event"
+ 1038      7400 
+ 1039               	.LASF25:
+ 1040 00eb 4578 6563 		.string	"Exec_readEventFifo"
+ 1040      5F72 6561 
+ 1040      6445 7665 
+ 1040      6E74 4669 
+ 1040      666F 00
+ 1041               	.LASF0:
+ 1042 00fe 756E 7369 		.string	"unsigned int"
+ 1042      676E 6564 
+ 1042      2069 6E74 
+ 1042      00
+ 1043               	.LASF26:
+ 1044 010b 4578 6563 		.string	"Exec_run"
+ 1044      5F72 756E 
+ 1044      00
+ 1045               	.LASF6:
+ 1046 0114 6C6F 6E67 		.string	"long long unsigned int"
+ 1046      206C 6F6E 
+ 1046      6720 756E 
+ 1046      7369 676E 
+ 1046      6564 2069 
+ 1047               	.LASF24:
+ 1048 012b 7569 6E74 		.string	"uint8_t"
+ 1048      385F 7400 
+ 1049               	.LASF9:
+ 1050 0133 6576 656E 		.string	"eventGenerated"
+ 1050      7447 656E 
+ 1050      6572 6174 
+ 1050      6564 00
+ 1051               	.LASF11:
+ 1052 0142 7369 7A65 		.string	"sizetype"
+ 1052      7479 7065 
+ 1052      00
+ 1053               	.LASF5:
+ 1054 014b 6C6F 6E67 		.string	"long long int"
+ 1054      206C 6F6E 
+ 1054      6720 696E 
+ 1054      7400 
+ 1055               	.LASF14:
+ 1056 0159 4578 6563 		.string	"Exec_eventFifoHead"
+ 1056      5F65 7665 
+ 1056      6E74 4669 
+ 1056      666F 4865 
+ 1056      6164 00
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s 			page 25
+
+
+ 1057               	.LASF10:
+ 1058 016c 746D 7048 		.string	"tmpHead"
+ 1058      6561 6400 
+ 1059               	.LASF21:
+ 1060 0174 474E 5520 		.string	"GNU C11 5.4.0 -mn-flash=1 -mno-skip-bug -mmcu=avr4 -g -O1 -funsigned-char -funsigned-bitf
+ 1060      4331 3120 
+ 1060      352E 342E 
+ 1060      3020 2D6D 
+ 1060      6E2D 666C 
+ 1061               	.LASF1:
+ 1062 01ef 6C6F 6E67 		.string	"long int"
+ 1062      2069 6E74 
+ 1062      00
+ 1063               	.LASF8:
+ 1064 01f8 746D 7054 		.string	"tmpTail"
+ 1064      6169 6C00 
+ 1065               	.LASF2:
+ 1066 0200 7369 676E 		.string	"signed char"
+ 1066      6564 2063 
+ 1066      6861 7200 
+ 1067               	.LASF18:
+ 1068 020c 4672 616D 		.string	"FrameMgr_acquireLine"
+ 1068      654D 6772 
+ 1068      5F61 6371 
+ 1068      7569 7265 
+ 1068      4C69 6E65 
+ 1069               	.LASF27:
+ 1070 0221 4578 6563 		.string	"Exec_writeEventFifo"
+ 1070      5F77 7269 
+ 1070      7465 4576 
+ 1070      656E 7446 
+ 1070      6966 6F00 
+ 1071               		.ident	"GCC: (AVR_8_bit_GNU_Toolchain_3.6.0_1734) 5.4.0"
+ 1072               	.global __do_clear_bss
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s 			page 26
+
+
+DEFINED SYMBOLS
+                            *ABS*:00000000 Executive.c
+C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s:2      *ABS*:0000003e __SP_H__
+C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s:3      *ABS*:0000003d __SP_L__
+C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s:4      *ABS*:0000003f __SREG__
+C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s:5      *ABS*:00000000 __tmp_reg__
+C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s:6      *ABS*:00000001 __zero_reg__
+C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s:12     .text:00000000 Exec_run
+C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s:262    .bss:00000000 fastEventBitmask
+C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s:272    .bss:00000002 Exec_eventFifoHead
+C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s:267    .bss:00000001 Exec_eventFifoTail
+                            *COM*:00000008 Exec_eventFifo
+C:\Users\Joe\AppData\Local\Temp\ccEjBvYq.s:219    .text:000000ce Exec_writeEventFifo
+
+UNDEFINED SYMBOLS
+FrameMgr_processLine
+UIMgr_transmitPendingData
+FrameMgr_acquireLine
+FrameMgr_dispatchEvent
+UIMgr_dispatchEvent
+__do_clear_bss

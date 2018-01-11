@@ -1,0 +1,42 @@
+<ASSEMBLER_INFO>
+ <VERSION>2.2.6</VERSION>
+ <DEVICE>"ATtiny12"</DEVICE>
+ <WORKING_DIR>C:\workspace\AVRcam\C3088_Master\Debug</WORKING_DIR>
+ <INCLUDE_PATH>
+  <DIR>C:/Program Files (x86)\Atmel\Studio\7.0\Packs\atmel\ATtiny_DFP\1.2.118\avrasm\inc</DIR>
+  <DIR>C:\Program Files (x86)\Atmel\Studio\7.0\toolchain\avr8\avrassembler\Include</DIR>
+  <DIR>C:\Program Files (x86)\Atmel\AVR Tools\AvrAssembler2\Appnotes</DIR>
+ </INCLUDE_PATH>
+ <SOURCE_FILE>C:\workspace\AVRcam\C3088_Master\main.asm</SOURCE_FILE>
+ <INCLUDED_FILES>
+  <FILE>C:/Program Files (x86)\Atmel\Studio\7.0\Packs\atmel\ATtiny_DFP\1.2.118\avrasm\inc\tn12def.inc</FILE>
+ </INCLUDED_FILES>
+ <OBJECT_FILES>
+  <FILE>C:\workspace\AVRcam\C3088_Master\Debug\C3088_Master.obj</FILE>
+ </OBJECT_FILES>
+ <HEX_FILES>
+  <FILE>C3088_Master.hex</FILE>
+ </HEX_FILES>
+ <OUTPUT_FILES>
+  <FILE>C3088_Master.map</FILE>
+  <FILE>C3088_Master.lss</FILE>
+ </OUTPUT_FILES>
+ <LABELS>
+  <RESET><FILE>C:\workspace\AVRcam\C3088_Master\main.asm</FILE><LINE>293</LINE></RESET>
+  <i2c_delay_hp><FILE>C:\workspace\AVRcam\C3088_Master\main.asm</FILE><LINE>104</LINE></i2c_delay_hp>
+  <i2c_start><FILE>C:\workspace\AVRcam\C3088_Master\main.asm</FILE><LINE>133</LINE></i2c_start>
+  <i2c_write><FILE>C:\workspace\AVRcam\C3088_Master\main.asm</FILE><LINE>159</LINE></i2c_write>
+  <i2c_write_first><FILE>C:\workspace\AVRcam\C3088_Master\main.asm</FILE><LINE>165</LINE></i2c_write_first>
+  <i2c_write_bit><FILE>C:\workspace\AVRcam\C3088_Master\main.asm</FILE><LINE>163</LINE></i2c_write_bit>
+  <i2c_get_ack><FILE>C:\workspace\AVRcam\C3088_Master\main.asm</FILE><LINE>183</LINE></i2c_get_ack>
+  <i2c_write_low><FILE>C:\workspace\AVRcam\C3088_Master\main.asm</FILE><LINE>173</LINE></i2c_write_low>
+  <i2c_write_high><FILE>C:\workspace\AVRcam\C3088_Master\main.asm</FILE><LINE>176</LINE></i2c_write_high>
+  <i2c_ack_wait><FILE>C:\workspace\AVRcam\C3088_Master\main.asm</FILE><LINE>188</LINE></i2c_ack_wait>
+  <i2c_stop><FILE>C:\workspace\AVRcam\C3088_Master\main.asm</FILE><LINE>215</LINE></i2c_stop>
+  <i2c_init><FILE>C:\workspace\AVRcam\C3088_Master\main.asm</FILE><LINE>251</LINE></i2c_init>
+  <main_delay><FILE>C:\workspace\AVRcam\C3088_Master\main.asm</FILE><LINE>263</LINE></main_delay>
+  <delay_loop1><FILE>C:\workspace\AVRcam\C3088_Master\main.asm</FILE><LINE>265</LINE></delay_loop1>
+  <main><FILE>C:\workspace\AVRcam\C3088_Master\main.asm</FILE><LINE>304</LINE></main>
+  <wait_forever><FILE>C:\workspace\AVRcam\C3088_Master\main.asm</FILE><LINE>349</LINE></wait_forever>
+ </LABELS>
+</ASSEMBLER_INFO>

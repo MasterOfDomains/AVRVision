@@ -1,0 +1,4532 @@
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 1
+
+
+   1               		.file	"FrameMgr.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__tmp_reg__ = 0
+   6               	__zero_reg__ = 1
+   7               		.text
+   8               	.Ltext0:
+   9               		.cfi_sections	.debug_frame
+  10               	.global	FrameMgr_init
+  11               		.type	FrameMgr_init, @function
+  12               	FrameMgr_init:
+  13               	.LFB4:
+  14               		.file 1 "FrameMgr.c"
+   1:FrameMgr.c    **** /*
+   2:FrameMgr.c    ****     Copyright (C) 2004    John Orlando
+   3:FrameMgr.c    ****     
+   4:FrameMgr.c    ****    AVRcam: a small real-time image processing engine.
+   5:FrameMgr.c    **** 
+   6:FrameMgr.c    ****     This program is free software; you can redistribute it and/or
+   7:FrameMgr.c    ****     modify it under the terms of the GNU General Public
+   8:FrameMgr.c    ****     License as published by the Free Software Foundation; either
+   9:FrameMgr.c    ****     version 2 of the License, or (at your option) any later version.
+  10:FrameMgr.c    **** 
+  11:FrameMgr.c    ****     This program is distributed in the hope that it will be useful,
+  12:FrameMgr.c    ****     but WITHOUT ANY WARRANTY; without even the implied warranty of
+  13:FrameMgr.c    ****     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  14:FrameMgr.c    ****     General Public License for more details.
+  15:FrameMgr.c    **** 
+  16:FrameMgr.c    ****     You should have received a copy of the GNU General Public
+  17:FrameMgr.c    ****     License along with this program; if not, write to the Free Software
+  18:FrameMgr.c    ****     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+  19:FrameMgr.c    **** 
+  20:FrameMgr.c    ****    For more information on the AVRcam, please contact:
+  21:FrameMgr.c    **** 
+  22:FrameMgr.c    ****    john@jrobot.net
+  23:FrameMgr.c    **** 
+  24:FrameMgr.c    ****    or go to www.jrobot.net for more details regarding the system.
+  25:FrameMgr.c    **** */
+  26:FrameMgr.c    **** /*********************************************************
+  27:FrameMgr.c    **** 	Module Name: FrameMgr.c
+  28:FrameMgr.c    **** 	Module Date: 04/10/2004
+  29:FrameMgr.c    **** 	Module Auth: John Orlando
+  30:FrameMgr.c    **** 	
+  31:FrameMgr.c    **** 	Description: This modules is responsible for performing
+  32:FrameMgr.c    **** 	both medium and high level processing on image data.
+  33:FrameMgr.c    **** 	This is performed at both the line level as well as
+  34:FrameMgr.c    **** 	the frame level.  It controls the main flow of the
+  35:FrameMgr.c    **** 	system, adhering to all the critical timing 
+  36:FrameMgr.c    **** 	requirements (such as when serial data can be transferred,
+  37:FrameMgr.c    **** 	etc).
+  38:FrameMgr.c    ****     
+  39:FrameMgr.c    ****     Revision History:
+  40:FrameMgr.c    ****     Date        Rel Ver.    Notes
+  41:FrameMgr.c    ****     4/10/2004      0.1     Module created
+  42:FrameMgr.c    ****     6/30/2004      1.0     Initial release for Circuit Cellar
+  43:FrameMgr.c    ****                            contest.
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 2
+
+
+  44:FrameMgr.c    ****     11/15/2004     1.2     Updated processLine() function so 
+  45:FrameMgr.c    ****                            it will remove objects less than
+  46:FrameMgr.c    ****                            a specified length/width (reduces
+  47:FrameMgr.c    ****                            shot noise)
+  48:FrameMgr.c    **** *********************************************************/
+  49:FrameMgr.c    **** 
+  50:FrameMgr.c    **** /*	Includes */
+  51:FrameMgr.c    **** #include <stdlib.h>
+  52:FrameMgr.c    **** #include <string.h>
+  53:FrameMgr.c    **** #include <avr/io.h>
+  54:FrameMgr.c    **** #include "Executive.h"
+  55:FrameMgr.c    **** #include "UIMgr.h"
+  56:FrameMgr.c    **** #include "FrameMgr.h"
+  57:FrameMgr.c    **** #include "CamInterface.h"
+  58:FrameMgr.c    **** #include "UartInterface.h"
+  59:FrameMgr.c    **** #include "Utility.h"
+  60:FrameMgr.c    **** #include "I2CInterface.h"
+  61:FrameMgr.c    **** #include "CamConfig.h"
+  62:FrameMgr.c    **** #include "CommonDefs.h"
+  63:FrameMgr.c    **** 
+  64:FrameMgr.c    **** /* 	Local Structures and Typedefs */
+  65:FrameMgr.c    **** enum
+  66:FrameMgr.c    **** {
+  67:FrameMgr.c    **** 	ST_FrameMgr_idle,
+  68:FrameMgr.c    **** 	ST_FrameMgr_TrackingFrame,
+  69:FrameMgr.c    **** 	ST_FrameMgr_DumpingFrame
+  70:FrameMgr.c    **** };
+  71:FrameMgr.c    **** 
+  72:FrameMgr.c    **** typedef unsigned char FrameMgr_State_t;
+  73:FrameMgr.c    **** 
+  74:FrameMgr.c    **** /*  Definitions */
+  75:FrameMgr.c    **** /* The most objects that can be tracked at any one time is 8.  
+  76:FrameMgr.c    **** This number is determined by the number of bytes that can be
+  77:FrameMgr.c    **** sent out during a frame (one byte per line, 144 lines per frame) 
+  78:FrameMgr.c    **** with the number of bytes in a tracked object (7) + some wiggle
+  79:FrameMgr.c    **** room :-) ... I guess this could be increased to around 20 if
+  80:FrameMgr.c    **** we had enough room and cycles to process objects between lines */
+  81:FrameMgr.c    **** #define MAX_TRACKED_OBJECTS	8
+  82:FrameMgr.c    **** 
+  83:FrameMgr.c    **** /* This defines the number of bytes that make up a trackedObject_t
+  84:FrameMgr.c    **** structure... */
+  85:FrameMgr.c    **** #define SIZE_OF_TRACKED_OBJECT 8
+  86:FrameMgr.c    **** 
+  87:FrameMgr.c    **** /* This define is used to turn off the timer overflow interrupt
+  88:FrameMgr.c    **** that is generated when the PCLK overflows TIMER1 */
+  89:FrameMgr.c    **** #define DISABLE_PCLK_TIMER1_OVERFLOW_BITMASK 0xFB
+  90:FrameMgr.c    **** 
+  91:FrameMgr.c    **** /* This define is used to determine if a run length is too small
+  92:FrameMgr.c    **** to be concerned with.  This helps to reduce the number of false
+  93:FrameMgr.c    **** positives. */
+  94:FrameMgr.c    **** #define MIN_OBJECT_TRACKING_WIDTH 3
+  95:FrameMgr.c    **** 
+  96:FrameMgr.c    **** /* This define is used to determine if an object has enough
+  97:FrameMgr.c    **** height to be considered worth tracking...it is used to reduce
+  98:FrameMgr.c    **** shot noise */
+  99:FrameMgr.c    **** #define MIN_OBJECT_TRACKING_HEIGHT 3
+ 100:FrameMgr.c    **** 
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 3
+
+
+ 101:FrameMgr.c    **** /* This define is used to indicate how often the filter routine
+ 102:FrameMgr.c    **** that removes objects less than MIN_OBJECT_TRACKING_HEIGHT should
+ 103:FrameMgr.c    **** be executed.  It is measured in a number of lines (7 nominally). */
+ 104:FrameMgr.c    **** #define RUN_OBJECT_FILTER_MASK 0x07
+ 105:FrameMgr.c    **** 
+ 106:FrameMgr.c    **** /* This enum describes the possible colors that can
+ 107:FrameMgr.c    **** be tracked by the system.  This can't be represented as
+ 108:FrameMgr.c    **** simple color names (red, brown, etc) due to the fact that
+ 109:FrameMgr.c    **** the user sets which colors will be associated with which
+ 110:FrameMgr.c    **** bits.  Remember...after the AND operation of the indexed
+ 111:FrameMgr.c    **** color map values executes, either a single bit indicating
+ 112:FrameMgr.c    **** the color should be set, or no bits indicating that the
+ 113:FrameMgr.c    **** color isn't represented in the color map (notTracked). */
+ 114:FrameMgr.c    **** enum
+ 115:FrameMgr.c    **** {
+ 116:FrameMgr.c    **** 	notTracked,
+ 117:FrameMgr.c    **** 	color1,		/* bit 1 color */
+ 118:FrameMgr.c    **** 	color2,		/* bit 2 color */
+ 119:FrameMgr.c    **** 	color3,		/* bit 3 color */
+ 120:FrameMgr.c    **** 	color4,		/* bit 4 color */
+ 121:FrameMgr.c    **** 	color5,		/* bit 5 color */
+ 122:FrameMgr.c    **** 	color6,		/* bit 6 color */
+ 123:FrameMgr.c    **** 	color7,		/* bit 7 color */
+ 124:FrameMgr.c    **** 	color8		/* bit 8 color */
+ 125:FrameMgr.c    **** };
+ 126:FrameMgr.c    **** 
+ 127:FrameMgr.c    **** typedef unsigned char trackedColor_t;
+ 128:FrameMgr.c    **** 
+ 129:FrameMgr.c    **** /* This structure defines the info that needs to be
+ 130:FrameMgr.c    **** maintained for each trackedObject in the trackingTable */
+ 131:FrameMgr.c    **** typedef struct
+ 132:FrameMgr.c    **** {
+ 133:FrameMgr.c    **** 	trackedColor_t  color;
+ 134:FrameMgr.c    **** 	unsigned char lastLineXStart;
+ 135:FrameMgr.c    **** 	unsigned char lastLineXFinish;
+ 136:FrameMgr.c    **** 	unsigned char x_upperLeft;
+ 137:FrameMgr.c    **** 	unsigned char y_upperLeft;
+ 138:FrameMgr.c    **** 	unsigned char x_lowerRight;
+ 139:FrameMgr.c    **** 	unsigned char y_lowerRight;
+ 140:FrameMgr.c    **** 	unsigned char objectValid;  /* used to be a fill byte...now it is
+ 141:FrameMgr.c    ****                                      used to determine if the object is valid
+ 142:FrameMgr.c    ****                                      or not...it gets invalidated if it is
+ 143:FrameMgr.c    ****                                      determined that it is too small, or
+ 144:FrameMgr.c    ****                                      that the object is within another object */
+ 145:FrameMgr.c    **** } trackedObject_t;
+ 146:FrameMgr.c    **** 
+ 147:FrameMgr.c    **** /* These defines are used to index into each individual element in the
+ 148:FrameMgr.c    **** trackedObject_t structure.  This seems to be MUCH more efficient than
+ 149:FrameMgr.c    **** accessing the elements in GCC. */
+ 150:FrameMgr.c    **** #define COLOR_OFFSET                0
+ 151:FrameMgr.c    **** #define LAST_LINE_X_START_OFFSET    1
+ 152:FrameMgr.c    **** #define LAST_LINE_X_FINISH_OFFSET   2
+ 153:FrameMgr.c    **** #define X_UPPER_LEFT_OFFSET         3
+ 154:FrameMgr.c    **** #define Y_UPPER_LEFT_OFFSET         4
+ 155:FrameMgr.c    **** #define X_LOWER_RIGHT_OFFSET        5
+ 156:FrameMgr.c    **** #define Y_LOWER_RIGHT_OFFSET        6
+ 157:FrameMgr.c    **** #define VALID_OBJECT_OFFSET         7
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 4
+
+
+ 158:FrameMgr.c    **** 
+ 159:FrameMgr.c    **** /*  Local Variables */
+ 160:FrameMgr.c    **** /* The trackedObjectTable is used to hold up to eight tracked objects
+ 161:FrameMgr.c    **** while they are being acquired. */
+ 162:FrameMgr.c    **** static trackedObject_t trackedObjectTable[MAX_TRACKED_OBJECTS];
+ 163:FrameMgr.c    **** static trackedObject_t *pCurrentTrackedObjectTable = trackedObjectTable;
+ 164:FrameMgr.c    **** static unsigned char lineCount = 0;
+ 165:FrameMgr.c    **** static FrameMgr_State_t currentState = ST_FrameMgr_idle;
+ 166:FrameMgr.c    **** static unsigned char numCurrTrackedObjects = 0;
+ 167:FrameMgr.c    **** static unsigned char numPrevTrackedObjects = 0;
+ 168:FrameMgr.c    **** static unsigned char trackedLineCount = 0;
+ 169:FrameMgr.c    **** 
+ 170:FrameMgr.c    **** /*  Local Functions  */
+ 171:FrameMgr.c    **** static void FrameMgr_findConnectedness(void);
+ 172:FrameMgr.c    **** 
+ 173:FrameMgr.c    **** /*  Extern Functions */
+ 174:FrameMgr.c    **** /* These functions are located in assembly files, and thus
+ 175:FrameMgr.c    **** must be externed here so they can be referenced in the source below. */
+ 176:FrameMgr.c    **** extern void CamIntAsm_waitForNewTrackingFrame(unsigned char *pBuffer, unsigned char *pMemLookup);
+ 177:FrameMgr.c    **** extern void CamIntAsm_waitForNewDumpFrame(unsigned char *pCurrBuffer, unsigned char *pPrevBuffer);
+ 178:FrameMgr.c    **** extern void CamIntAsm_acquireTrackingLine(unsigned char *pBuffer, unsigned char *pMemLookup);
+ 179:FrameMgr.c    **** extern void CamIntAsm_acquireDumpLine(unsigned char *pCurrBuffer, unsigned char *pPrevBuffer);
+ 180:FrameMgr.c    **** 
+ 181:FrameMgr.c    **** /***********************************************************
+ 182:FrameMgr.c    **** 	Function Name: FrameMgr_init
+ 183:FrameMgr.c    **** 	Function Description: This function is responsible
+ 184:FrameMgr.c    **** 	for initializing the FrameMgr.  This includes 
+ 185:FrameMgr.c    **** 	setting up the various buffers and data needed to 
+ 186:FrameMgr.c    **** 	process each frame of image data.
+ 187:FrameMgr.c    **** 	Inputs:  none
+ 188:FrameMgr.c    **** 	Outputs: none
+ 189:FrameMgr.c    **** ***********************************************************/	
+ 190:FrameMgr.c    **** void FrameMgr_init(void)
+ 191:FrameMgr.c    **** {
+  15               		.loc 1 191 0
+  16               		.cfi_startproc
+  17               	/* prologue: function */
+  18               	/* frame size = 0 */
+  19               	/* stack size = 0 */
+  20               	.L__stack_usage = 0
+ 192:FrameMgr.c    **** 	memset(trackedObjectTable,0x00,sizeof(trackedObjectTable));
+  21               		.loc 1 192 0
+  22 0000 80E4      		ldi r24,lo8(64)
+  23 0002 E0E0      		ldi r30,lo8(trackedObjectTable)
+  24 0004 F0E0      		ldi r31,hi8(trackedObjectTable)
+  25 0006 DF01      		movw r26,r30
+  26               		0:
+  27 0008 1D92      		st X+,__zero_reg__
+  28 000a 8A95      		dec r24
+  29 000c 01F4      		brne 0b
+  30 000e 0895      		ret
+  31               		.cfi_endproc
+  32               	.LFE4:
+  33               		.size	FrameMgr_init, .-FrameMgr_init
+  34               	.global	FrameMgr_acquireFrame
+  35               		.type	FrameMgr_acquireFrame, @function
+  36               	FrameMgr_acquireFrame:
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 5
+
+
+  37               	.LFB6:
+ 193:FrameMgr.c    **** }
+ 194:FrameMgr.c    **** 
+ 195:FrameMgr.c    **** 
+ 196:FrameMgr.c    **** /***********************************************************
+ 197:FrameMgr.c    **** 	Function Name: FrameMgr_dispatchEvent
+ 198:FrameMgr.c    **** 	Function Description: This function is responsible for
+ 199:FrameMgr.c    **** 	taking an incoming event and performing the needed
+ 200:FrameMgr.c    **** 	actions with it as pertains to the FrameMgr.
+ 201:FrameMgr.c    **** 	Inputs:  event - the generated event
+ 202:FrameMgr.c    **** 	Outputs: none
+ 203:FrameMgr.c    **** ***********************************************************/	
+ 204:FrameMgr.c    **** void FrameMgr_dispatchEvent(unsigned char event)
+ 205:FrameMgr.c    **** {	
+ 206:FrameMgr.c    **** 	switch(event)
+ 207:FrameMgr.c    **** 	{
+ 208:FrameMgr.c    **** 		case EV_DUMP_FRAME:
+ 209:FrameMgr.c    ****             /* try re-initializing the camera before we start dumping */
+ 210:FrameMgr.c    ****             
+ 211:FrameMgr.c    **** 			CamConfig_setCamReg(0x11,0x01);  /* reduce the frame rate for dumping*/
+ 212:FrameMgr.c    **** 			CamConfig_sendFifoCmds();
+ 213:FrameMgr.c    **** 			Utility_delay(1000);		/* allow the new frame rate to settle */
+ 214:FrameMgr.c    **** 			lineCount = 0;
+ 215:FrameMgr.c    **** 			currentState = ST_FrameMgr_DumpingFrame;
+ 216:FrameMgr.c    **** 			//CamIntAsm_waitForNewDumpFrame(currentLineBuffer,previousLineBuffer);
+ 217:FrameMgr.c    ****             FrameMgr_acquireLine();
+ 218:FrameMgr.c    **** 			break;
+ 219:FrameMgr.c    **** 		
+ 220:FrameMgr.c    **** 		case EV_ENABLE_TRACKING:
+ 221:FrameMgr.c    **** 			currentState = ST_FrameMgr_TrackingFrame;					
+ 222:FrameMgr.c    **** 			FrameMgr_acquireFrame();
+ 223:FrameMgr.c    **** 			break;
+ 224:FrameMgr.c    **** 			
+ 225:FrameMgr.c    **** 		case EV_ACQUIRE_FRAME_COMPLETE:
+ 226:FrameMgr.c    **** 			FrameMgr_processFrame();
+ 227:FrameMgr.c    **** 			break;
+ 228:FrameMgr.c    **** 		
+ 229:FrameMgr.c    **** 		case EV_PROCESS_FRAME_COMPLETE:
+ 230:FrameMgr.c    **** 			FrameMgr_acquireFrame();
+ 231:FrameMgr.c    **** 			break;
+ 232:FrameMgr.c    **** 
+ 233:FrameMgr.c    **** 		case EV_SERIAL_DATA_RECEIVED:
+ 234:FrameMgr.c    **** 			if (currentState != ST_FrameMgr_idle)
+ 235:FrameMgr.c    **** 			{
+ 236:FrameMgr.c    **** 				/* we need to go back to processing line data, since
+ 237:FrameMgr.c    **** 				serial data reception interrupted us....just trash the
+ 238:FrameMgr.c    **** 				frame and act like the frame has been processed, which
+ 239:FrameMgr.c    **** 				will kick off the system to wait for the next line */
+ 240:FrameMgr.c    **** 				PUBLISH_EVENT(EV_PROCESS_FRAME_COMPLETE);
+ 241:FrameMgr.c    **** 			}
+ 242:FrameMgr.c    **** 			break;
+ 243:FrameMgr.c    **** 			
+ 244:FrameMgr.c    **** 		case EV_DISABLE_TRACKING:
+ 245:FrameMgr.c    **** 			/* tracking needs to be turned off */
+ 246:FrameMgr.c    **** 			currentState = ST_FrameMgr_idle;
+ 247:FrameMgr.c    **** 			break;
+ 248:FrameMgr.c    **** 	}
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 6
+
+
+ 249:FrameMgr.c    **** }
+ 250:FrameMgr.c    **** 
+ 251:FrameMgr.c    **** /***********************************************************
+ 252:FrameMgr.c    **** 	Function Name: FrameMgr_acquireFrame
+ 253:FrameMgr.c    **** 	Function Description: This function is responsible for
+ 254:FrameMgr.c    **** 	beginning of the acquisition of a new frame of data
+ 255:FrameMgr.c    **** 	from the camera interface. The acquisition of this line 
+ 256:FrameMgr.c    **** 	depends on the current state of the FrameMgr.
+ 257:FrameMgr.c    **** 	Inputs:  none
+ 258:FrameMgr.c    **** 	Outputs: none
+ 259:FrameMgr.c    **** ***********************************************************/	
+ 260:FrameMgr.c    **** void FrameMgr_acquireFrame(void)
+ 261:FrameMgr.c    **** {
+  38               		.loc 1 261 0
+  39               		.cfi_startproc
+  40               	/* prologue: function */
+  41               	/* frame size = 0 */
+  42               	/* stack size = 0 */
+  43               	.L__stack_usage = 0
+ 262:FrameMgr.c    **** 	if (currentState == ST_FrameMgr_TrackingFrame)
+  44               		.loc 1 262 0
+  45 0010 8091 0000 		lds r24,currentState
+  46 0014 8130      		cpi r24,lo8(1)
+  47 0016 01F4      		brne .L2
+ 263:FrameMgr.c    **** 	{
+ 264:FrameMgr.c    **** 		trackedLineCount = 0;
+  48               		.loc 1 264 0
+  49 0018 1092 0000 		sts trackedLineCount,__zero_reg__
+ 265:FrameMgr.c    **** 		numPrevTrackedObjects = numCurrTrackedObjects;
+ 266:FrameMgr.c    **** 		numCurrTrackedObjects = 0;
+  50               		.loc 1 266 0
+  51 001c 1092 0000 		sts numCurrTrackedObjects,__zero_reg__
+ 267:FrameMgr.c    **** 		
+ 268:FrameMgr.c    **** 		/* clear out the tracking table, and wait for the new frame
+ 269:FrameMgr.c    **** 		to start */
+ 270:FrameMgr.c    **** 		memset(trackedObjectTable,0x00,sizeof(trackedObjectTable));
+  52               		.loc 1 270 0
+  53 0020 80E4      		ldi r24,lo8(64)
+  54 0022 E0E0      		ldi r30,lo8(trackedObjectTable)
+  55 0024 F0E0      		ldi r31,hi8(trackedObjectTable)
+  56 0026 DF01      		movw r26,r30
+  57               		0:
+  58 0028 1D92      		st X+,__zero_reg__
+  59 002a 8A95      		dec r24
+  60 002c 01F4      		brne 0b
+  61               	.L4:
+ 271:FrameMgr.c    **** 		//CamIntAsm_waitForNewTrackingFrame(currentLineBuffer,colorMap);
+ 272:FrameMgr.c    ****         WAIT_FOR_VSYNC_HIGH();
+  62               		.loc 1 272 0 discriminator 1
+  63 002e 829B      		sbis 0x10,2
+  64 0030 00C0      		rjmp .L4
+ 273:FrameMgr.c    ****         CamIntAsm_acquireTrackingLine(currentLineBuffer,colorMap);
+  65               		.loc 1 273 0
+  66 0032 60E0      		ldi r22,lo8(colorMap)
+  67 0034 70E0      		ldi r23,hi8(colorMap)
+  68 0036 80E0      		ldi r24,lo8(currentLineBuffer)
+  69 0038 90E0      		ldi r25,hi8(currentLineBuffer)
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 7
+
+
+  70 003a 00D0      		rcall CamIntAsm_acquireTrackingLine
+  71               	.LVL0:
+  72               	.L2:
+  73 003c 0895      		ret
+  74               		.cfi_endproc
+  75               	.LFE6:
+  76               		.size	FrameMgr_acquireFrame, .-FrameMgr_acquireFrame
+  77               	.global	FrameMgr_acquireLine
+  78               		.type	FrameMgr_acquireLine, @function
+  79               	FrameMgr_acquireLine:
+  80               	.LFB7:
+ 274:FrameMgr.c    **** 	}
+ 275:FrameMgr.c    **** }
+ 276:FrameMgr.c    **** 
+ 277:FrameMgr.c    **** /***********************************************************
+ 278:FrameMgr.c    **** 	Function Name: FrameMgr_acquireLine
+ 279:FrameMgr.c    **** 	Function Description: This function is responsible for
+ 280:FrameMgr.c    **** 	acquiring a line of data from the camera interface.
+ 281:FrameMgr.c    **** 	The acquisition of this line depends on the current
+ 282:FrameMgr.c    **** 	state of the FrameMgr.
+ 283:FrameMgr.c    **** 	Inputs:  none
+ 284:FrameMgr.c    **** 	Outputs: none
+ 285:FrameMgr.c    **** ***********************************************************/	
+ 286:FrameMgr.c    **** void FrameMgr_acquireLine(void)
+ 287:FrameMgr.c    **** {
+  81               		.loc 1 287 0
+  82               		.cfi_startproc
+  83               	/* prologue: function */
+  84               	/* frame size = 0 */
+  85               	/* stack size = 0 */
+  86               	.L__stack_usage = 0
+ 288:FrameMgr.c    **** 	unsigned char tmpLineCount;
+ 289:FrameMgr.c    **** 	
+ 290:FrameMgr.c    **** 	/* clearing out the buffers takes too long...we should
+ 291:FrameMgr.c    **** 	just overwrite the data here without a problem when
+ 292:FrameMgr.c    **** 	we start acquiring...at no point do we check for 
+ 293:FrameMgr.c    **** 	a 0x00 value in the current or previous lineBuffers,
+ 294:FrameMgr.c    **** 	so it was a bit excessive :-)  */
+ 295:FrameMgr.c    **** 	
+ 296:FrameMgr.c    **** 	/* check which state we are in and proceed as needed */
+ 297:FrameMgr.c    **** 	if (currentState == ST_FrameMgr_DumpingFrame)
+  87               		.loc 1 297 0
+  88 003e 8091 0000 		lds r24,currentState
+  89 0042 8230      		cpi r24,lo8(2)
+  90 0044 01F4      		brne .L7
+ 298:FrameMgr.c    **** 	{
+ 299:FrameMgr.c    **** 		tmpLineCount = lineCount*2;
+  91               		.loc 1 299 0
+  92 0046 8091 0000 		lds r24,lineCount
+  93 004a 880F      		lsl r24
+  94               	.LVL1:
+ 300:FrameMgr.c    ****         
+ 301:FrameMgr.c    ****         /* clearing out the line data in dump mode is ok, and actually
+ 302:FrameMgr.c    ****         is needed, since it is possible for the first dump line in
+ 303:FrameMgr.c    ****         a frame to come back with the last line captured of the
+ 304:FrameMgr.c    ****         last capture session...*/
+ 305:FrameMgr.c    ****         memset(currentLineBuffer,0x00,LENGTH_OF_LINE_BUFFER);
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 8
+
+
+  95               		.loc 1 305 0
+  96 004c 90EB      		ldi r25,lo8(-80)
+  97 004e E0E0      		ldi r30,lo8(currentLineBuffer)
+  98 0050 F0E0      		ldi r31,hi8(currentLineBuffer)
+  99 0052 DF01      		movw r26,r30
+ 100 0054 292F      		mov r18,r25
+ 101               		0:
+ 102 0056 1D92      		st X+,__zero_reg__
+ 103 0058 2A95      		dec r18
+ 104 005a 01F4      		brne 0b
+ 306:FrameMgr.c    ****         memset(previousLineBuffer,0x00,LENGTH_OF_LINE_BUFFER);
+ 105               		.loc 1 306 0
+ 106 005c E0E0      		ldi r30,lo8(previousLineBuffer)
+ 107 005e F0E0      		ldi r31,hi8(previousLineBuffer)
+ 108 0060 DF01      		movw r26,r30
+ 109               		0:
+ 110 0062 1D92      		st X+,__zero_reg__
+ 111 0064 9A95      		dec r25
+ 112 0066 01F4      		brne 0b
+ 113               	.L8:
+ 307:FrameMgr.c    **** 		/* wait for another VSYNC so we know which frame to use 
+ 308:FrameMgr.c    **** 		to start looking for a line to receive */
+ 309:FrameMgr.c    **** 		WAIT_FOR_VSYNC_HIGH();  
+ 114               		.loc 1 309 0 discriminator 1
+ 115 0068 829B      		sbis 0x10,2
+ 116 006a 00C0      		rjmp .L8
+ 117               	.L19:
+ 310:FrameMgr.c    **** 		WAIT_FOR_VSYNC_LOW();
+ 118               		.loc 1 310 0 discriminator 1
+ 119 006c 8299      		sbic 0x10,2
+ 120 006e 00C0      		rjmp .L19
+ 121 0070 00C0      		rjmp .L27
+ 122               	.L11:
+ 311:FrameMgr.c    **** 		
+ 312:FrameMgr.c    **** 		/* look at lineCount to determine how many HREFs we should
+ 313:FrameMgr.c    **** 		wait before we start sampling */
+ 314:FrameMgr.c    **** 		while(tmpLineCount != 0)
+ 315:FrameMgr.c    **** 		{
+ 316:FrameMgr.c    **** 			WAIT_FOR_HREF_HIGH(); 
+ 123               		.loc 1 316 0 discriminator 1
+ 124 0072 849B      		sbis 0x10,4
+ 125 0074 00C0      		rjmp .L11
+ 317:FrameMgr.c    **** 			tmpLineCount--;
+ 126               		.loc 1 317 0
+ 127 0076 8150      		subi r24,lo8(-(-1))
+ 128               	.LVL2:
+ 129               	.L12:
+ 318:FrameMgr.c    **** 			WAIT_FOR_HREF_LOW(); 
+ 130               		.loc 1 318 0 discriminator 1
+ 131 0078 8499      		sbic 0x10,4
+ 132 007a 00C0      		rjmp .L12
+ 133 007c 00C0      		rjmp .L28
+ 134               	.L27:
+ 314:FrameMgr.c    **** 		{
+ 135               		.loc 1 314 0
+ 136 007e 8111      		cpse r24,__zero_reg__
+ 137 0080 00C0      		rjmp .L11
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 9
+
+
+ 138 0082 00C0      		rjmp .L15
+ 139               	.L28:
+ 140 0084 8111      		cpse r24,__zero_reg__
+ 141 0086 00C0      		rjmp .L11
+ 142               	.L15:
+ 319:FrameMgr.c    **** 		}
+ 320:FrameMgr.c    **** 		
+ 321:FrameMgr.c    **** 		/*  we should now be ready to sample our line...*/
+ 322:FrameMgr.c    **** 		CamIntAsm_acquireDumpLine(currentLineBuffer,previousLineBuffer);
+ 143               		.loc 1 322 0
+ 144 0088 60E0      		ldi r22,lo8(previousLineBuffer)
+ 145 008a 70E0      		ldi r23,hi8(previousLineBuffer)
+ 146 008c 80E0      		ldi r24,lo8(currentLineBuffer)
+ 147 008e 90E0      		ldi r25,hi8(currentLineBuffer)
+ 148               	.LVL3:
+ 149 0090 00D0      		rcall CamIntAsm_acquireDumpLine
+ 150               	.LVL4:
+ 151 0092 0895      		ret
+ 152               	.L7:
+ 323:FrameMgr.c    **** 	}		
+ 324:FrameMgr.c    **** 	else if (currentState == ST_FrameMgr_TrackingFrame)
+ 153               		.loc 1 324 0
+ 154 0094 8130      		cpi r24,lo8(1)
+ 155 0096 01F4      		brne .L6
+ 156               	.L20:
+ 325:FrameMgr.c    **** 	{
+ 326:FrameMgr.c    **** 		WAIT_FOR_HREF_LOW();
+ 157               		.loc 1 326 0 discriminator 1
+ 158 0098 8499      		sbic 0x10,4
+ 159 009a 00C0      		rjmp .L20
+ 327:FrameMgr.c    **** 		CamIntAsm_acquireTrackingLine(currentLineBuffer,colorMap);
+ 160               		.loc 1 327 0
+ 161 009c 60E0      		ldi r22,lo8(colorMap)
+ 162 009e 70E0      		ldi r23,hi8(colorMap)
+ 163 00a0 80E0      		ldi r24,lo8(currentLineBuffer)
+ 164 00a2 90E0      		ldi r25,hi8(currentLineBuffer)
+ 165 00a4 00D0      		rcall CamIntAsm_acquireTrackingLine
+ 166               	.LVL5:
+ 167               	.L6:
+ 168 00a6 0895      		ret
+ 169               		.cfi_endproc
+ 170               	.LFE7:
+ 171               		.size	FrameMgr_acquireLine, .-FrameMgr_acquireLine
+ 172               	.global	FrameMgr_processLine
+ 173               		.type	FrameMgr_processLine, @function
+ 174               	FrameMgr_processLine:
+ 175               	.LFB8:
+ 328:FrameMgr.c    **** 	}
+ 329:FrameMgr.c    **** }
+ 330:FrameMgr.c    **** 
+ 331:FrameMgr.c    **** /***********************************************************
+ 332:FrameMgr.c    **** 	Function Name: FrameMgr_processLine
+ 333:FrameMgr.c    **** 	Function Description: This function is responsible for
+ 334:FrameMgr.c    **** 	parsing the received image line and performing either
+ 335:FrameMgr.c    **** 	connected region mapping (if in the Tracking state) or
+ 336:FrameMgr.c    **** 	sending out the raw sampled data (if in the Dumping
+ 337:FrameMgr.c    **** 	state).
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 10
+
+
+ 338:FrameMgr.c    **** 	Inputs:  none
+ 339:FrameMgr.c    **** 	Outputs: none
+ 340:FrameMgr.c    **** ***********************************************************/	
+ 341:FrameMgr.c    **** void FrameMgr_processLine(void)
+ 342:FrameMgr.c    **** {
+ 176               		.loc 1 342 0
+ 177               		.cfi_startproc
+ 178 00a8 AF92      		push r10
+ 179               	.LCFI0:
+ 180               		.cfi_def_cfa_offset 3
+ 181               		.cfi_offset 10, -2
+ 182 00aa BF92      		push r11
+ 183               	.LCFI1:
+ 184               		.cfi_def_cfa_offset 4
+ 185               		.cfi_offset 11, -3
+ 186 00ac CF92      		push r12
+ 187               	.LCFI2:
+ 188               		.cfi_def_cfa_offset 5
+ 189               		.cfi_offset 12, -4
+ 190 00ae DF92      		push r13
+ 191               	.LCFI3:
+ 192               		.cfi_def_cfa_offset 6
+ 193               		.cfi_offset 13, -5
+ 194 00b0 EF92      		push r14
+ 195               	.LCFI4:
+ 196               		.cfi_def_cfa_offset 7
+ 197               		.cfi_offset 14, -6
+ 198 00b2 FF92      		push r15
+ 199               	.LCFI5:
+ 200               		.cfi_def_cfa_offset 8
+ 201               		.cfi_offset 15, -7
+ 202 00b4 0F93      		push r16
+ 203               	.LCFI6:
+ 204               		.cfi_def_cfa_offset 9
+ 205               		.cfi_offset 16, -8
+ 206 00b6 1F93      		push r17
+ 207               	.LCFI7:
+ 208               		.cfi_def_cfa_offset 10
+ 209               		.cfi_offset 17, -9
+ 210 00b8 CF93      		push r28
+ 211               	.LCFI8:
+ 212               		.cfi_def_cfa_offset 11
+ 213               		.cfi_offset 28, -10
+ 214 00ba DF93      		push r29
+ 215               	.LCFI9:
+ 216               		.cfi_def_cfa_offset 12
+ 217               		.cfi_offset 29, -11
+ 218 00bc 1F92      		push __zero_reg__
+ 219               	.LCFI10:
+ 220               		.cfi_def_cfa_offset 13
+ 221 00be CDB7      		in r28,__SP_L__
+ 222 00c0 DEB7      		in r29,__SP_H__
+ 223               	.LCFI11:
+ 224               		.cfi_def_cfa_register 28
+ 225               	/* prologue: function */
+ 226               	/* frame size = 1 */
+ 227               	/* stack size = 11 */
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 11
+
+
+ 228               	.L__stack_usage = 11
+ 229               	.LVL6:
+ 343:FrameMgr.c    **** 	unsigned char i;
+ 344:FrameMgr.c    **** 	volatile unsigned char dataToSend;
+ 345:FrameMgr.c    **** 	unsigned char *pTrackedObjectData = (unsigned char *)pCurrentTrackedObjectTable;
+ 346:FrameMgr.c    **** #ifdef DEBUG_TRACKED_LINE    
+ 347:FrameMgr.c    **** 	unsigned char *pSendData;
+ 348:FrameMgr.c    ****     unsigned char asciiBuffer[5];
+ 349:FrameMgr.c    ****     unsigned char pixelCount = 0;
+ 350:FrameMgr.c    **** #endif    
+ 351:FrameMgr.c    **** 	
+ 352:FrameMgr.c    **** 	if (currentState == ST_FrameMgr_DumpingFrame)
+ 230               		.loc 1 352 0
+ 231 00c2 8091 0000 		lds r24,currentState
+ 232 00c6 8230      		cpi r24,lo8(2)
+ 233 00c8 01F0      		breq .+2
+ 234 00ca 00C0      		rjmp .L30
+ 353:FrameMgr.c    **** 	{
+ 354:FrameMgr.c    **** 		/* we want to sit in a tight loop and send the acquired data
+ 355:FrameMgr.c    **** 		sitting in current and previous line buffers out the serial
+ 356:FrameMgr.c    **** 		port...it is sent out the serial port immediately instead
+ 357:FrameMgr.c    **** 		of going into the UIMgr tx fifo because we can't do anything
+ 358:FrameMgr.c    **** 		until its sent out anyway...may as well just get it out now	*/
+ 359:FrameMgr.c    **** 		
+ 360:FrameMgr.c    **** 		/* currentLineBuffer is getting "g" previousLineBuffer is getting "b-r" */
+ 361:FrameMgr.c    **** 		UartInt_txByte(0x0B);			/* send the header byte */
+ 235               		.loc 1 361 0
+ 236 00cc 8BE0      		ldi r24,lo8(11)
+ 237 00ce 00D0      		rcall UartInt_txByte
+ 238               	.LVL7:
+ 362:FrameMgr.c    **** 		UartInt_txByte(lineCount);		/* send the line count */
+ 239               		.loc 1 362 0
+ 240 00d0 8091 0000 		lds r24,lineCount
+ 241 00d4 00D0      		rcall UartInt_txByte
+ 242               	.LVL8:
+ 243 00d6 00E0      		ldi r16,lo8(currentLineBuffer)
+ 244 00d8 10E0      		ldi r17,hi8(currentLineBuffer)
+ 245 00da 0F2E      		mov __tmp_reg__,r31
+ 246 00dc F0E0      		ldi r31,lo8(previousLineBuffer)
+ 247 00de EF2E      		mov r14,r31
+ 248 00e0 F0E0      		ldi r31,hi8(previousLineBuffer)
+ 249 00e2 FF2E      		mov r15,r31
+ 250 00e4 F02D      		mov r31,__tmp_reg__
+ 251 00e6 0F2E      		mov __tmp_reg__,r31
+ 252 00e8 F0E0      		ldi r31,lo8(currentLineBuffer+176)
+ 253 00ea CF2E      		mov r12,r31
+ 254 00ec F0E0      		ldi r31,hi8(currentLineBuffer+176)
+ 255 00ee DF2E      		mov r13,r31
+ 256 00f0 F02D      		mov r31,__tmp_reg__
+ 257               	.LVL9:
+ 258               	.L31:
+ 363:FrameMgr.c    **** 		for (i=0; i<NUM_PIXELS_IN_A_DUMP_LINE; i+=2)
+ 364:FrameMgr.c    **** 		{
+ 365:FrameMgr.c    **** 			/* when a dump line is sampled, the upper byte can potentially
+ 366:FrameMgr.c    **** 			have garbage in it...we don't have time to mask it off as we're
+ 367:FrameMgr.c    **** 			sampling, so it is done here before we send it out...we also
+ 368:FrameMgr.c    **** 			combine the samples together so we really are sending up a
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 12
+
+
+ 369:FrameMgr.c    **** 			sample for line N as well as line N+1 */
+ 370:FrameMgr.c    **** 			dataToSend = currentLineBuffer[i];
+ 259               		.loc 1 370 0 discriminator 3
+ 260 00f2 F801      		movw r30,r16
+ 261 00f4 8081      		ld r24,Z
+ 262 00f6 8983      		std Y+1,r24
+ 371:FrameMgr.c    **** 			dataToSend &= 0x0F;
+ 263               		.loc 1 371 0 discriminator 3
+ 264 00f8 8981      		ldd r24,Y+1
+ 265 00fa 8F70      		andi r24,lo8(15)
+ 266 00fc 8983      		std Y+1,r24
+ 372:FrameMgr.c    **** 			dataToSend <<= 4;
+ 267               		.loc 1 372 0 discriminator 3
+ 268 00fe 8981      		ldd r24,Y+1
+ 269 0100 8295      		swap r24
+ 270 0102 807F      		andi r24,lo8(-16)
+ 271 0104 8983      		std Y+1,r24
+ 373:FrameMgr.c    **** 			dataToSend |= (previousLineBuffer[i] & 0x0F);
+ 272               		.loc 1 373 0 discriminator 3
+ 273 0106 9981      		ldd r25,Y+1
+ 274 0108 F701      		movw r30,r14
+ 275 010a 8081      		ld r24,Z
+ 276 010c 8F70      		andi r24,lo8(15)
+ 277 010e 892B      		or r24,r25
+ 278 0110 8983      		std Y+1,r24
+ 374:FrameMgr.c    **** 			
+ 375:FrameMgr.c    **** 			/* dataToSend should be packed now */
+ 376:FrameMgr.c    **** 			UartInt_txByte(dataToSend);
+ 279               		.loc 1 376 0 discriminator 3
+ 280 0112 8981      		ldd r24,Y+1
+ 281 0114 00D0      		rcall UartInt_txByte
+ 282               	.LVL10:
+ 377:FrameMgr.c    **** 			
+ 378:FrameMgr.c    **** 			/* flip the colors around since we are doing all G on Y and BR on UV */
+ 379:FrameMgr.c    **** 			dataToSend = previousLineBuffer[i+1];
+ 283               		.loc 1 379 0 discriminator 3
+ 284 0116 F701      		movw r30,r14
+ 285 0118 8181      		ldd r24,Z+1
+ 286 011a 8983      		std Y+1,r24
+ 380:FrameMgr.c    **** 			dataToSend &= 0x0F;
+ 287               		.loc 1 380 0 discriminator 3
+ 288 011c 8981      		ldd r24,Y+1
+ 289 011e 8F70      		andi r24,lo8(15)
+ 290 0120 8983      		std Y+1,r24
+ 381:FrameMgr.c    **** 			dataToSend <<= 4;
+ 291               		.loc 1 381 0 discriminator 3
+ 292 0122 8981      		ldd r24,Y+1
+ 293 0124 8295      		swap r24
+ 294 0126 807F      		andi r24,lo8(-16)
+ 295 0128 8983      		std Y+1,r24
+ 382:FrameMgr.c    **** 			dataToSend |= (currentLineBuffer[i+1] & 0x0F);
+ 296               		.loc 1 382 0 discriminator 3
+ 297 012a 9981      		ldd r25,Y+1
+ 298 012c F801      		movw r30,r16
+ 299 012e 8181      		ldd r24,Z+1
+ 300 0130 8F70      		andi r24,lo8(15)
+ 301 0132 892B      		or r24,r25
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 13
+
+
+ 302 0134 8983      		std Y+1,r24
+ 383:FrameMgr.c    **** 			
+ 384:FrameMgr.c    **** 			/* dataToSend should be packed now */
+ 385:FrameMgr.c    **** 			UartInt_txByte(dataToSend);
+ 303               		.loc 1 385 0 discriminator 3
+ 304 0136 8981      		ldd r24,Y+1
+ 305 0138 00D0      		rcall UartInt_txByte
+ 306               	.LVL11:
+ 307 013a 0E5F      		subi r16,-2
+ 308 013c 1F4F      		sbci r17,-1
+ 309               	.LVL12:
+ 310 013e F2E0      		ldi r31,2
+ 311 0140 EF0E      		add r14,r31
+ 312 0142 F11C      		adc r15,__zero_reg__
+ 363:FrameMgr.c    **** 		{
+ 313               		.loc 1 363 0 discriminator 3
+ 314 0144 0C15      		cp r16,r12
+ 315 0146 1D05      		cpc r17,r13
+ 316 0148 01F4      		brne .L31
+ 386:FrameMgr.c    **** 		}
+ 387:FrameMgr.c    **** 		UartInt_txByte(0x0F);  /* send line end */
+ 317               		.loc 1 387 0
+ 318 014a 8FE0      		ldi r24,lo8(15)
+ 319 014c 00D0      		rcall UartInt_txByte
+ 320               	.LVL13:
+ 388:FrameMgr.c    **** 		/* once all the data is sent, increment out line count by 2 since
+ 389:FrameMgr.c    **** 		we really get 2 lines worth of pixels on each pass */
+ 390:FrameMgr.c    **** 		/* Update...increment only by 1, but only send 72 double-lines */
+ 391:FrameMgr.c    **** 		lineCount++;
+ 321               		.loc 1 391 0
+ 322 014e 8091 0000 		lds r24,lineCount
+ 323 0152 8F5F      		subi r24,lo8(-(1))
+ 324 0154 8093 0000 		sts lineCount,r24
+ 392:FrameMgr.c    **** 		
+ 393:FrameMgr.c    **** 		/* check to see if we have retrieved all of the needed lines */
+ 394:FrameMgr.c    **** 		if (lineCount >= 72)  /* half 144, since we send two lines at a time */
+ 325               		.loc 1 394 0
+ 326 0158 8834      		cpi r24,lo8(72)
+ 327 015a 00F0      		brlo .L32
+ 395:FrameMgr.c    **** 		{
+ 396:FrameMgr.c    **** 			/* we're done, so send the dump complete?...nope, just change
+ 397:FrameMgr.c    **** 			states and we should be fine */
+ 398:FrameMgr.c    **** 			lineCount = 0;
+ 328               		.loc 1 398 0
+ 329 015c 1092 0000 		sts lineCount,__zero_reg__
+ 399:FrameMgr.c    **** 			currentState = ST_FrameMgr_idle;
+ 330               		.loc 1 399 0
+ 331 0160 1092 0000 		sts currentState,__zero_reg__
+ 400:FrameMgr.c    **** 			
+ 401:FrameMgr.c    **** 			/* disable the PCLK counting overflow interrupt */
+ 402:FrameMgr.c    **** 			TIMSK &= DISABLE_PCLK_TIMER1_OVERFLOW_BITMASK;
+ 332               		.loc 1 402 0
+ 333 0164 89B7      		in r24,0x39
+ 334 0166 8B7F      		andi r24,lo8(-5)
+ 335 0168 89BF      		out 0x39,r24
+ 403:FrameMgr.c    **** 			
+ 404:FrameMgr.c    **** 			CamConfig_setCamReg(0x11,0x00);  /* reset the frame rate to normal*/
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 14
+
+
+ 336               		.loc 1 404 0
+ 337 016a 60E0      		ldi r22,0
+ 338 016c 81E1      		ldi r24,lo8(17)
+ 339 016e 00D0      		rcall CamConfig_setCamReg
+ 340               	.LVL14:
+ 405:FrameMgr.c    **** 			CamConfig_sendFifoCmds();
+ 341               		.loc 1 405 0
+ 342 0170 00D0      		rcall CamConfig_sendFifoCmds
+ 343               	.LVL15:
+ 344 0172 00C0      		rjmp .L29
+ 345               	.L32:
+ 406:FrameMgr.c    **** 		}
+ 407:FrameMgr.c    **** 		else
+ 408:FrameMgr.c    **** 		{
+ 409:FrameMgr.c    **** 			/* we have more lines to acquire in this frame, so keep on truckin...*/
+ 410:FrameMgr.c    **** 			PUBLISH_FAST_EVENT(FEV_PROCESS_LINE_COMPLETE);
+ 346               		.loc 1 410 0
+ 347 0174 8091 0000 		lds r24,fastEventBitmask
+ 348 0178 8260      		ori r24,lo8(2)
+ 349 017a 8093 0000 		sts fastEventBitmask,r24
+ 350 017e 00C0      		rjmp .L29
+ 351               	.LVL16:
+ 352               	.L30:
+ 411:FrameMgr.c    **** 		}
+ 412:FrameMgr.c    **** 	}
+ 413:FrameMgr.c    **** 	else if (currentState == ST_FrameMgr_TrackingFrame)
+ 353               		.loc 1 413 0
+ 354 0180 8130      		cpi r24,lo8(1)
+ 355 0182 01F0      		breq .+2
+ 356 0184 00C0      		rjmp .L29
+ 357               	.LBB4:
+ 358               	.LBB5:
+ 414:FrameMgr.c    **** 	{
+ 415:FrameMgr.c    **** #ifdef DEBUG_TRACKED_LINE	
+ 416:FrameMgr.c    **** 		/* send the received line over serial...this should only send
+ 417:FrameMgr.c    **** 		until a pixelCount == 176 */
+ 418:FrameMgr.c    **** 		pSendData = currentLineBuffer;
+ 419:FrameMgr.c    **** 		itoa(trackedLineCount,asciiBuffer,10);
+ 420:FrameMgr.c    **** 		UIMgr_txBuffer(asciiBuffer,3);
+ 421:FrameMgr.c    **** 		UIMgr_txBuffer(" ",1);
+ 422:FrameMgr.c    **** 		while(pixelCount < ACTUAL_NUM_PIXELS_IN_A_LINE)  
+ 423:FrameMgr.c    **** 		{
+ 424:FrameMgr.c    **** 			memset(asciiBuffer,0x00,5);
+ 425:FrameMgr.c    **** 			itoa(*pSendData++,asciiBuffer,10);	/* color is first byte */
+ 426:FrameMgr.c    **** 			UIMgr_txBuffer(asciiBuffer,3); /* 3 ascii bytes for data */
+ 427:FrameMgr.c    **** 			UIMgr_txBuffer(" ",1);
+ 428:FrameMgr.c    **** 
+ 429:FrameMgr.c    **** 			pixelCount += *pSendData;	/* run-length is second byte */
+ 430:FrameMgr.c    **** 			memset(asciiBuffer,0x00,5);
+ 431:FrameMgr.c    **** 			itoa(*pSendData++,asciiBuffer,10);
+ 432:FrameMgr.c    **** 			UIMgr_txBuffer(asciiBuffer,3);
+ 433:FrameMgr.c    **** 			UIMgr_txBuffer(" ",1);
+ 434:FrameMgr.c    **** 		}
+ 435:FrameMgr.c    **** 		UIMgr_txBuffer("\n\r",2);
+ 436:FrameMgr.c    **** 
+ 437:FrameMgr.c    **** 		trackedLineCount++;
+ 438:FrameMgr.c    **** 		if (trackedLineCount == 144)
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 15
+
+
+ 439:FrameMgr.c    **** 		{
+ 440:FrameMgr.c    **** 			UIMgr_txBuffer("  FC  \n\r",8);
+ 441:FrameMgr.c    **** 			trackedLineCount = 0;
+ 442:FrameMgr.c    **** 			PUBLISH_EVENT(EV_PROCESS_FRAME_COMPLETE);
+ 443:FrameMgr.c    **** 		}
+ 444:FrameMgr.c    **** 		else
+ 445:FrameMgr.c    **** 		{
+ 446:FrameMgr.c    **** 			PUBLISH_EVENT(EV_PROCESS_LINE_COMPLETE);
+ 447:FrameMgr.c    **** 		}	
+ 448:FrameMgr.c    **** #else
+ 449:FrameMgr.c    ****         /* determine if any of the RLE blocks overlap */
+ 450:FrameMgr.c    **** 		FrameMgr_findConnectedness();
+ 451:FrameMgr.c    ****         
+ 452:FrameMgr.c    ****         /* we also want to remove any objects that are less than
+ 453:FrameMgr.c    ****         a minimum height...we already removed portions of the 
+ 454:FrameMgr.c    ****         run-length that are less than MIN_PIXEL_WIDTH in the
+ 455:FrameMgr.c    ****         findConnectedness() routine...doing it here instead of 
+ 456:FrameMgr.c    ****         a function to speed things up...this may end up slowing down the
+ 457:FrameMgr.c    ****         frame rate slightly, and can be removed if this isn't needed */
+ 458:FrameMgr.c    ****   
+ 459:FrameMgr.c    ****         /* run this routine once every 8 lines */       
+ 460:FrameMgr.c    ****         if ( (trackedLineCount & RUN_OBJECT_FILTER_MASK) == RUN_OBJECT_FILTER_MASK)
+ 461:FrameMgr.c    ****         {
+ 462:FrameMgr.c    ****             for (i=0; i<MAX_TRACKED_OBJECTS; i++)
+ 463:FrameMgr.c    ****             {
+ 464:FrameMgr.c    ****                 if ( *(pTrackedObjectData + VALID_OBJECT_OFFSET) == TRUE)
+ 465:FrameMgr.c    ****                 {
+ 466:FrameMgr.c    ****                     /* check to see if the object is already in
+ 467:FrameMgr.c    ****                     our past...i.e., its last */
+ 468:FrameMgr.c    ****                     if ( (*(pTrackedObjectData + Y_LOWER_RIGHT_OFFSET) - 
+ 469:FrameMgr.c    ****                           *(pTrackedObjectData + Y_UPPER_LEFT_OFFSET)) < MIN_OBJECT_TRACKING_HEIGHT
+ 470:FrameMgr.c    ****                     {
+ 471:FrameMgr.c    ****                         /* the object is less than the minimum height...see if it is adjacent
+ 472:FrameMgr.c    ****                         to the current line we just processed...if so, leave it here...otherwise,
+ 473:FrameMgr.c    ****                         it needs to be invalidated since its too small */
+ 474:FrameMgr.c    ****                         if ( trackedLineCount - *(pTrackedObjectData + Y_LOWER_RIGHT_OFFSET) > 2)
+ 475:FrameMgr.c    ****                         {
+ 476:FrameMgr.c    ****                             /* invalidate the object */
+ 477:FrameMgr.c    ****                             *(pTrackedObjectData + VALID_OBJECT_OFFSET) = FALSE;
+ 478:FrameMgr.c    ****                             numCurrTrackedObjects--;
+ 479:FrameMgr.c    ****                         }
+ 480:FrameMgr.c    ****                     }
+ 481:FrameMgr.c    ****                 }
+ 482:FrameMgr.c    ****                 pTrackedObjectData += SIZE_OF_TRACKED_OBJECT;
+ 483:FrameMgr.c    ****             }
+ 484:FrameMgr.c    ****         }     
+ 485:FrameMgr.c    ****  
+ 486:FrameMgr.c    **** 		trackedLineCount++;
+ 487:FrameMgr.c    **** 		if (trackedLineCount == ACTUAL_NUM_LINES_IN_A_FRAME)
+ 488:FrameMgr.c    **** 		{
+ 489:FrameMgr.c    **** 			/* an entire frame of tracking data has been acquired, so
+ 490:FrameMgr.c    **** 			publish an event letting the system know this fact */
+ 491:FrameMgr.c    **** 			PUBLISH_EVENT(EV_ACQUIRE_FRAME_COMPLETE);
+ 492:FrameMgr.c    **** 			/* disable the PCLK counting overflow interrupt */
+ 493:FrameMgr.c    **** 			TIMSK &= DISABLE_PCLK_TIMER1_OVERFLOW_BITMASK;
+ 494:FrameMgr.c    **** 			trackedLineCount = 0;
+ 495:FrameMgr.c    **** 		}
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 16
+
+
+ 496:FrameMgr.c    **** 		else
+ 497:FrameMgr.c    **** 		{
+ 498:FrameMgr.c    **** 			PUBLISH_FAST_EVENT(FEV_PROCESS_LINE_COMPLETE);
+ 499:FrameMgr.c    **** 		}
+ 500:FrameMgr.c    **** #endif		
+ 501:FrameMgr.c    **** 	}
+ 502:FrameMgr.c    **** 	else
+ 503:FrameMgr.c    **** 	{
+ 504:FrameMgr.c    **** 		/* ...and here? */
+ 505:FrameMgr.c    **** 	}
+ 506:FrameMgr.c    **** }
+ 507:FrameMgr.c    **** 
+ 508:FrameMgr.c    **** /***********************************************************
+ 509:FrameMgr.c    **** 	Function Name: FrameMgr_processFrame
+ 510:FrameMgr.c    **** 	Function Description: This function is responsible for
+ 511:FrameMgr.c    **** 	parsing the completed frame and performing all actions
+ 512:FrameMgr.c    **** 	needed at this level.
+ 513:FrameMgr.c    **** 	Inputs:  none
+ 514:FrameMgr.c    **** 	Outputs: none
+ 515:FrameMgr.c    **** ***********************************************************/	
+ 516:FrameMgr.c    **** void FrameMgr_processFrame(void)
+ 517:FrameMgr.c    **** {
+ 518:FrameMgr.c    **** 	unsigned char i,k,color;
+ 519:FrameMgr.c    **** #if DEBUG_FRAME_DATA    
+ 520:FrameMgr.c    **** 	unsigned char asciiBuffer[5];
+ 521:FrameMgr.c    ****     unsigned char j;
+ 522:FrameMgr.c    **** #endif    
+ 523:FrameMgr.c    **** 	unsigned char *pTableData = (unsigned char *)pCurrentTrackedObjectTable;
+ 524:FrameMgr.c    **** 	unsigned char tmpUpperLeftX,tmpUpperLeftY,tmpLowerRightX,tmpLowerRightY;
+ 525:FrameMgr.c    **** 	
+ 526:FrameMgr.c    **** #if DEBUG_FRAME_DATA	
+ 527:FrameMgr.c    **** 	/* we want to send all of the currently tracked table out
+ 528:FrameMgr.c    **** 	the serial port for debugging */
+ 529:FrameMgr.c    **** 	for (i=0; i<numCurrTrackedObjects; i++)
+ 530:FrameMgr.c    **** 	{
+ 531:FrameMgr.c    **** 		UIMgr_txBuffer("----------\r\n",12);
+ 532:FrameMgr.c    **** 		for (j=0; j<SIZE_OF_TRACKED_OBJECT; j++)
+ 533:FrameMgr.c    **** 		{
+ 534:FrameMgr.c    **** 			memset(asciiBuffer,0x00,5);
+ 535:FrameMgr.c    **** 			itoa(*pTableData++,asciiBuffer,10);
+ 536:FrameMgr.c    **** 			UIMgr_txBuffer(asciiBuffer,3); /* 3 ascii bytes for data
+ 537:FrameMgr.c    **** 														+ 1 space */
+ 538:FrameMgr.c    **** 			UIMgr_txBuffer("\r\n",2);
+ 539:FrameMgr.c    **** 		}
+ 540:FrameMgr.c    **** 	}
+ 541:FrameMgr.c    **** 	
+ 542:FrameMgr.c    **** 	/* finally, send a new line */
+ 543:FrameMgr.c    **** 	UIMgr_txBuffer("\r\n",2);
+ 544:FrameMgr.c    **** 	
+ 545:FrameMgr.c    **** 	memset(asciiBuffer,0x00,5);
+ 546:FrameMgr.c    **** 	itoa(numCurrTrackedObjects,asciiBuffer,10);
+ 547:FrameMgr.c    **** 	UIMgr_txBuffer(asciiBuffer,3);
+ 548:FrameMgr.c    **** 	UIMgr_txBuffer(" PFC\r\n",5);
+ 549:FrameMgr.c    **** 
+ 550:FrameMgr.c    **** #else	
+ 551:FrameMgr.c    **** 	/* we only send tracking packets if there are tracked objects */	        
+ 552:FrameMgr.c    ****     
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 17
+
+
+ 553:FrameMgr.c    **** 	if (numCurrTrackedObjects > 0)
+ 554:FrameMgr.c    **** 	{		
+ 555:FrameMgr.c    **** 		UIMgr_writeTxFifo(0x0A);					/* header byte for a tracking packet */
+ 556:FrameMgr.c    ****         /* reset the pointer */
+ 557:FrameMgr.c    ****         pTableData = (unsigned char *)pCurrentTrackedObjectTable;
+ 558:FrameMgr.c    ****         
+ 559:FrameMgr.c    **** 		UIMgr_writeTxFifo(numCurrTrackedObjects);	/* num of objects tracked */
+ 560:FrameMgr.c    **** 		for (i=0; i<MAX_TRACKED_OBJECTS; i++)
+ 561:FrameMgr.c    **** 		{
+ 562:FrameMgr.c    ****             /* we only want to process objects that have their objectValid flag
+ 563:FrameMgr.c    ****             set to TRUE */
+ 564:FrameMgr.c    ****             if ( *(pTableData + VALID_OBJECT_OFFSET) == TRUE)
+ 565:FrameMgr.c    ****             {
+ 566:FrameMgr.c    ****                 /* the object is valid...convert the color from bit position to value...remember, 
+ 567:FrameMgr.c    ****                 each bit in the "color" byte corresponds to a color */
+ 568:FrameMgr.c    ****                 k=0;
+ 569:FrameMgr.c    ****                 color = *(pTableData + COLOR_OFFSET);
+ 570:FrameMgr.c    ****                 if (color == 128) k=0;
+ 571:FrameMgr.c    ****                 else if (color == 64) k=1;
+ 572:FrameMgr.c    ****                 else if (color == 32) k=2;
+ 573:FrameMgr.c    ****                 else if (color == 16) k=3;
+ 574:FrameMgr.c    ****                 else if (color == 8)  k=4;
+ 575:FrameMgr.c    ****                 else if (color == 4)  k=5;
+ 576:FrameMgr.c    ****                 else if (color == 2)  k=6;
+ 577:FrameMgr.c    ****                 else if (color == 1)  k=7;
+ 578:FrameMgr.c    ****                 
+ 579:FrameMgr.c    ****                 tmpUpperLeftX = *(pTableData + X_UPPER_LEFT_OFFSET);	    /* get the upper left X */
+ 580:FrameMgr.c    ****                 tmpUpperLeftY = *(pTableData + Y_UPPER_LEFT_OFFSET);		/* get the upper left Y */		
+ 581:FrameMgr.c    ****                 tmpLowerRightX = *(pTableData + X_LOWER_RIGHT_OFFSET);		/* get the lower right X */
+ 582:FrameMgr.c    ****                 tmpLowerRightY = *(pTableData + Y_LOWER_RIGHT_OFFSET);		/* get the lower right Y */
+ 583:FrameMgr.c    ****                 
+ 584:FrameMgr.c    ****                 UIMgr_writeTxFifo(k);				  	/* send the color first */
+ 585:FrameMgr.c    ****                 UIMgr_writeTxFifo(tmpUpperLeftX);
+ 586:FrameMgr.c    ****                 UIMgr_writeTxFifo(tmpUpperLeftY);
+ 587:FrameMgr.c    ****                 UIMgr_writeTxFifo(tmpLowerRightX);
+ 588:FrameMgr.c    ****                 UIMgr_writeTxFifo(tmpLowerRightY);			
+ 589:FrameMgr.c    ****             }
+ 590:FrameMgr.c    **** 
+ 591:FrameMgr.c    ****             /* move our pointer up to the beginning of the next object */
+ 592:FrameMgr.c    ****             pTableData += SIZE_OF_TRACKED_OBJECT;
+ 593:FrameMgr.c    ****         }
+ 594:FrameMgr.c    **** 		
+ 595:FrameMgr.c    **** 		/* all done...send the end of tracking packets char */
+ 596:FrameMgr.c    **** 		UIMgr_writeTxFifo(0xFF);
+ 597:FrameMgr.c    **** 	}	
+ 598:FrameMgr.c    **** #endif	
+ 599:FrameMgr.c    **** 
+ 600:FrameMgr.c    ****     /* the tracked object table will be cleared out right before we start
+ 601:FrameMgr.c    ****     to wait for VSYNC to indicate a new frame...so it doesn't need to be
+ 602:FrameMgr.c    ****     done now */
+ 603:FrameMgr.c    ****     
+ 604:FrameMgr.c    **** 	/* schedule the next action to acquire a new frame */	
+ 605:FrameMgr.c    **** 	PUBLISH_EVENT(EV_PROCESS_FRAME_COMPLETE);
+ 606:FrameMgr.c    **** }
+ 607:FrameMgr.c    **** 
+ 608:FrameMgr.c    **** /***********************************************************
+ 609:FrameMgr.c    **** 	Function Name: FrameMgr_findConnectedness
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 18
+
+
+ 610:FrameMgr.c    **** 	Function Description: This function is responsible for
+ 611:FrameMgr.c    **** 	finding the connectedness between two particular run-
+ 612:FrameMgr.c    **** 	length encoded lines of pixel data.  It updates the
+ 613:FrameMgr.c    **** 	trackingTable as needed.
+ 614:FrameMgr.c    **** 	Inputs:  none
+ 615:FrameMgr.c    **** 	Outputs: none
+ 616:FrameMgr.c    **** ***********************************************************/	
+ 617:FrameMgr.c    **** static void FrameMgr_findConnectedness(void)
+ 618:FrameMgr.c    **** {
+ 619:FrameMgr.c    **** 	trackedColor_t currColor;
+ 620:FrameMgr.c    **** 	unsigned char *pCurrLineColorInfo = currentLineBuffer;
+ 621:FrameMgr.c    **** 	unsigned char *pTrackedObjectData;
+ 622:FrameMgr.c    **** 	register unsigned char currPixelRunStart=0;
+ 623:FrameMgr.c    **** 	register unsigned char currPixelRunFinish=0; 
+ 624:FrameMgr.c    **** 	register unsigned char lastLineXStart=0;
+ 625:FrameMgr.c    **** 	register unsigned char lastLineXFinish=0;  
+ 626:FrameMgr.c    **** 	register unsigned char runLength=1;
+ 627:FrameMgr.c    **** 	unsigned char i;
+ 628:FrameMgr.c    **** 	bool_t colorConnected;	
+ 629:FrameMgr.c    **** 	
+ 630:FrameMgr.c    **** 	do
+ 631:FrameMgr.c    **** 	{
+ 632:FrameMgr.c    **** 		/* grab both the current color and the number of pixels
+ 633:FrameMgr.c    **** 		in the run...remember, pixels start at 1, not 0! */
+ 634:FrameMgr.c    **** 		colorConnected = FALSE;
+ 635:FrameMgr.c    **** 		currColor = *pCurrLineColorInfo++;
+ 636:FrameMgr.c    **** 		currPixelRunStart += runLength;
+ 637:FrameMgr.c    **** 		runLength = *pCurrLineColorInfo++;
+ 638:FrameMgr.c    **** 		currPixelRunFinish += runLength;
+ 639:FrameMgr.c    ****       
+ 640:FrameMgr.c    ****         /* make sure that the run-length is at least as wide as
+ 641:FrameMgr.c    ****         the minimum horizontal tracking width, and we care about the color */ 
+ 642:FrameMgr.c    ****         
+ 643:FrameMgr.c    **** 		if ( (currColor != notTracked) && (runLength > MIN_OBJECT_TRACKING_WIDTH) )
+ 644:FrameMgr.c    **** 		{			
+ 645:FrameMgr.c    ****             /* this run contains a color we care about, so 
+ 646:FrameMgr.c    **** 			either it will begin a new tracked object, or it
+ 647:FrameMgr.c    **** 			is connected to a currently tracked object...
+ 648:FrameMgr.c    **** 			compare it with each object in the tracking
+ 649:FrameMgr.c    **** 			table...we can't just look at the numTrackedObjects because
+ 650:FrameMgr.c    ****             it is entirely possible that the first couple of objects could
+ 651:FrameMgr.c    ****             be invalid...
+ 652:FrameMgr.c    **** 
+ 653:FrameMgr.c    ****             NOTE: Instead of accessing each element in the trackedObjectTable
+ 654:FrameMgr.c    ****             through the 'i' index, and then accessing the fields in each structure,
+ 655:FrameMgr.c    ****             a pointer to each entry is established each time through the loop, followed
+ 656:FrameMgr.c    ****             by accessing the elements through specified offsets.  GCC seems to be
+ 657:FrameMgr.c    ****             able to optimize this code much better than simply accessing the elements
+ 658:FrameMgr.c    ****             of each structure in the array the more normal way...*/
+ 659:FrameMgr.c    ****             
+ 660:FrameMgr.c    ****             pTrackedObjectData = (unsigned char *)pCurrentTrackedObjectTable;
+ 661:FrameMgr.c    **** 			for (i=0; i<MAX_TRACKED_OBJECTS; i++)
+ 662:FrameMgr.c    **** 			{
+ 663:FrameMgr.c    **** 				if ( (currColor == *(pTrackedObjectData + COLOR_OFFSET)) && 
+ 664:FrameMgr.c    ****                      (*(pTrackedObjectData + VALID_OBJECT_OFFSET) == TRUE) &&
+ 665:FrameMgr.c    ****                      (*(pTrackedObjectData + Y_LOWER_RIGHT_OFFSET) == trackedLineCount - 1) )
+ 359               		.loc 1 665 0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 19
+
+
+ 360 0186 5091 0000 		lds r21,trackedLineCount
+ 361 018a 052F      		mov r16,r21
+ 362 018c 10E0      		ldi r17,0
+ 363 018e B801      		movw r22,r16
+ 364 0190 6150      		subi r22,1
+ 365 0192 7109      		sbc r23,__zero_reg__
+ 366 0194 B090 0000 		lds r11,numCurrTrackedObjects
+ 367 0198 A0E0      		ldi r26,lo8(currentLineBuffer)
+ 368 019a B0E0      		ldi r27,hi8(currentLineBuffer)
+ 369 019c 21E0      		ldi r18,lo8(1)
+ 370 019e 30E0      		ldi r19,0
+ 371 01a0 40E0      		ldi r20,0
+ 666:FrameMgr.c    **** 				{
+ 667:FrameMgr.c    **** 					/* found a color match and the object is valid...check to see if there is
+ 668:FrameMgr.c    **** 					connectedness */
+ 669:FrameMgr.c    **** 					lastLineXStart = *(pTrackedObjectData + LAST_LINE_X_START_OFFSET);
+ 670:FrameMgr.c    **** 					lastLineXFinish = *(pTrackedObjectData + LAST_LINE_X_FINISH_OFFSET);
+ 671:FrameMgr.c    **** 					
+ 672:FrameMgr.c    **** 					/* Check for the 5 following types of line connectedness:
+ 673:FrameMgr.c    **** 					---------------------
+ 674:FrameMgr.c    **** 					|                   |
+ 675:FrameMgr.c    **** 					---------------------
+ 676:FrameMgr.c    **** 					         -------------------------
+ 677:FrameMgr.c    **** 							 |                       |
+ 678:FrameMgr.c    **** 							 -------------------------  */
+ 679:FrameMgr.c    **** 					if ( (	(currPixelRunStart >= lastLineXStart) &&
+ 680:FrameMgr.c    **** 							(currPixelRunStart <= lastLineXFinish) )  ||
+ 681:FrameMgr.c    **** 							
+ 682:FrameMgr.c    **** 					/*               ---------------------
+ 683:FrameMgr.c    **** 					                 |                   |
+ 684:FrameMgr.c    **** 									 ---------------------
+ 685:FrameMgr.c    **** 						-------------------
+ 686:FrameMgr.c    **** 						|                 |
+ 687:FrameMgr.c    **** 						-------------------  
+ 688:FrameMgr.c    **** 						                   OR
+ 689:FrameMgr.c    **** 						     ------------------------------
+ 690:FrameMgr.c    **** 							 |                            |
+ 691:FrameMgr.c    **** 							 ------------------------------
+ 692:FrameMgr.c    **** 							              ---------
+ 693:FrameMgr.c    **** 										  |       |
+ 694:FrameMgr.c    **** 										  ---------  */
+ 695:FrameMgr.c    **** 						 (	(currPixelRunFinish >= lastLineXStart) && 
+ 696:FrameMgr.c    **** 							(currPixelRunFinish <= lastLineXFinish) ) ||
+ 697:FrameMgr.c    **** 							
+ 698:FrameMgr.c    **** 							
+ 699:FrameMgr.c    **** 					/*     -------------------------------
+ 700:FrameMgr.c    **** 					       |                             |
+ 701:FrameMgr.c    **** 						   -------------------------------
+ 702:FrameMgr.c    **** 						   -------------------------------
+ 703:FrameMgr.c    **** 						   |                             |
+ 704:FrameMgr.c    **** 						   -------------------------------
+ 705:FrameMgr.c    **** 						                  OR
+ 706:FrameMgr.c    **** 								     -------------
+ 707:FrameMgr.c    **** 									 |           |
+ 708:FrameMgr.c    **** 									 -------------
+ 709:FrameMgr.c    **** 							-------------------------------
+ 710:FrameMgr.c    **** 							|                             |
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 20
+
+
+ 711:FrameMgr.c    **** 							-------------------------------   */
+ 712:FrameMgr.c    **** 						 (  (currPixelRunStart <= lastLineXStart) &&
+ 713:FrameMgr.c    **** 							(currPixelRunFinish >= lastLineXFinish) ) )
+ 714:FrameMgr.c    **** 					{
+ 715:FrameMgr.c    **** 						/* THERE IS CONNECTEDNESS...update the lastLineXStart and lastLineXFinish
+ 716:FrameMgr.c    **** 						data pointed to by pTrackedObjectData */
+ 717:FrameMgr.c    **** 						*(pTrackedObjectData + LAST_LINE_X_START_OFFSET) = currPixelRunStart;
+ 718:FrameMgr.c    **** 						*(pTrackedObjectData + LAST_LINE_X_FINISH_OFFSET) = currPixelRunFinish;
+ 719:FrameMgr.c    **** 						
+ 720:FrameMgr.c    **** 						/* check if the bounding box needs to be updated */
+ 721:FrameMgr.c    **** 						if (*(pTrackedObjectData + X_UPPER_LEFT_OFFSET) > currPixelRunStart)
+ 722:FrameMgr.c    **** 						{
+ 723:FrameMgr.c    **** 							/* need to update the bounding box for the upper left point to 
+ 724:FrameMgr.c    **** 							enclose this new left-most point...we never have to update the
+ 725:FrameMgr.c    **** 							upper left Y point, since each scan line we process moves from
+ 726:FrameMgr.c    **** 							top to bottom */
+ 727:FrameMgr.c    **** 							*(pTrackedObjectData + X_UPPER_LEFT_OFFSET) = currPixelRunStart;
+ 728:FrameMgr.c    **** 						}
+ 729:FrameMgr.c    **** 
+ 730:FrameMgr.c    **** 						if ( *(pTrackedObjectData + X_LOWER_RIGHT_OFFSET) < currPixelRunFinish)
+ 731:FrameMgr.c    **** 						{
+ 732:FrameMgr.c    **** 							/* need to update the bounding box for the lower right X point to
+ 733:FrameMgr.c    **** 							enclose this new right-most point */
+ 734:FrameMgr.c    **** 							*(pTrackedObjectData + X_LOWER_RIGHT_OFFSET) = currPixelRunFinish;
+ 735:FrameMgr.c    **** 						}
+ 736:FrameMgr.c    **** 						
+ 737:FrameMgr.c    **** 						/* the lower right 'y' point always gets updated when connectedness is found */
+ 738:FrameMgr.c    **** 						*(pTrackedObjectData + Y_LOWER_RIGHT_OFFSET) = trackedLineCount;
+ 739:FrameMgr.c    **** 						
+ 740:FrameMgr.c    **** 						/* set a flag indicating that that color run is part of another
+ 741:FrameMgr.c    **** 						object and thus doesn't need to be added as a new entry into the
+ 742:FrameMgr.c    **** 						tracking table */
+ 743:FrameMgr.c    **** 						colorConnected = TRUE;
+ 744:FrameMgr.c    **** 						break;
+ 745:FrameMgr.c    **** 					}
+ 746:FrameMgr.c    **** 				}
+ 747:FrameMgr.c    ****                 
+ 748:FrameMgr.c    ****                 /* go to the next object */
+ 749:FrameMgr.c    ****                 pTrackedObjectData += SIZE_OF_TRACKED_OBJECT;
+ 750:FrameMgr.c    **** 			}
+ 751:FrameMgr.c    **** 			
+ 752:FrameMgr.c    **** 			if (colorConnected == FALSE)
+ 753:FrameMgr.c    **** 			{
+ 754:FrameMgr.c    **** 				/* a new entry needs to be made to the tracking table, since we have
+ 755:FrameMgr.c    **** 				a run-length with a color, and it isn't connected to anything...but we
+ 756:FrameMgr.c    **** 				can only do this if there is space left in the trackedObject table */
+ 757:FrameMgr.c    **** 				if (numCurrTrackedObjects < MAX_TRACKED_OBJECTS)
+ 758:FrameMgr.c    **** 				{                
+ 759:FrameMgr.c    ****                     /* space is available...add the object...but first we need to find an
+ 760:FrameMgr.c    ****                     invalid object in the object tracking table */
+ 761:FrameMgr.c    ****                     pTrackedObjectData = (unsigned char *)pCurrentTrackedObjectTable;
+ 762:FrameMgr.c    ****                     for (i=0; i<MAX_TRACKED_OBJECTS; i++)
+ 763:FrameMgr.c    ****                     {
+ 764:FrameMgr.c    ****                         if ( *(pTrackedObjectData + VALID_OBJECT_OFFSET) == FALSE)  break;
+ 372               		.loc 1 764 0
+ 373 01a2 0F2E      		mov __tmp_reg__,r31
+ 374 01a4 F0E0      		ldi r31,lo8(trackedObjectTable)
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 21
+
+
+ 375 01a6 EF2E      		mov r14,r31
+ 376 01a8 F0E0      		ldi r31,hi8(trackedObjectTable)
+ 377 01aa FF2E      		mov r15,r31
+ 378 01ac F02D      		mov r31,__tmp_reg__
+ 765:FrameMgr.c    ****                         
+ 766:FrameMgr.c    ****                         /* if we haven't broken above, then the object must have been valid...
+ 767:FrameMgr.c    ****                         go ahead and move the pointer to the next object to check it */
+ 768:FrameMgr.c    ****                         pTrackedObjectData += SIZE_OF_TRACKED_OBJECT;
+ 769:FrameMgr.c    ****                     }
+ 770:FrameMgr.c    ****                     
+ 771:FrameMgr.c    **** 					
+ 772:FrameMgr.c    **** 					/* now that we have a pointer to the tracked object to be updated, update all
+ 773:FrameMgr.c    **** 					the fields */
+ 774:FrameMgr.c    **** 					*(pTrackedObjectData + COLOR_OFFSET)                = currColor;			/* color */
+ 775:FrameMgr.c    **** 					*(pTrackedObjectData + LAST_LINE_X_START_OFFSET)    = currPixelRunStart; 	/* lastLineXStart */
+ 776:FrameMgr.c    **** 					*(pTrackedObjectData + LAST_LINE_X_FINISH_OFFSET)   = currPixelRunFinish;	/* lastLineXFinish *
+ 777:FrameMgr.c    **** 					*(pTrackedObjectData + X_UPPER_LEFT_OFFSET)         = currPixelRunStart;	/* x_upperLeft */
+ 778:FrameMgr.c    **** 					*(pTrackedObjectData + Y_UPPER_LEFT_OFFSET)         = trackedLineCount;	/* y_upperLeft */
+ 779:FrameMgr.c    **** 					*(pTrackedObjectData + X_LOWER_RIGHT_OFFSET)        = currPixelRunFinish;	/* x_lowerRight */
+ 780:FrameMgr.c    **** 					*(pTrackedObjectData + Y_LOWER_RIGHT_OFFSET)        = trackedLineCount;	/* y_lowerRight */
+ 781:FrameMgr.c    ****                     *(pTrackedObjectData + VALID_OBJECT_OFFSET)         = TRUE;                /* o
+ 379               		.loc 1 781 0
+ 380 01ae AA24      		clr r10
+ 381 01b0 A394      		inc r10
+ 382               	.L46:
+ 383               	.LVL17:
+ 635:FrameMgr.c    **** 		currPixelRunStart += runLength;
+ 384               		.loc 1 635 0
+ 385 01b2 8C91      		ld r24,X
+ 386               	.LVL18:
+ 636:FrameMgr.c    **** 		runLength = *pCurrLineColorInfo++;
+ 387               		.loc 1 636 0
+ 388 01b4 420F      		add r20,r18
+ 389               	.LVL19:
+ 637:FrameMgr.c    **** 		currPixelRunFinish += runLength;
+ 390               		.loc 1 637 0
+ 391 01b6 1196      		adiw r26,1
+ 392 01b8 2C91      		ld r18,X
+ 393 01ba 1197      		sbiw r26,1
+ 394               	.LVL20:
+ 638:FrameMgr.c    ****       
+ 395               		.loc 1 638 0
+ 396 01bc 320F      		add r19,r18
+ 397               	.LVL21:
+ 643:FrameMgr.c    **** 		{			
+ 398               		.loc 1 643 0
+ 399 01be 8823      		tst r24
+ 400 01c0 01F4      		brne .+2
+ 401 01c2 00C0      		rjmp .L34
+ 402 01c4 2430      		cpi r18,lo8(4)
+ 403 01c6 00F4      		brsh .+2
+ 404 01c8 00C0      		rjmp .L34
+ 405 01ca E0E0      		ldi r30,lo8(trackedObjectTable)
+ 406 01cc F0E0      		ldi r31,hi8(trackedObjectTable)
+ 407               	.L42:
+ 408               	.LVL22:
+ 663:FrameMgr.c    ****                      (*(pTrackedObjectData + VALID_OBJECT_OFFSET) == TRUE) &&
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 22
+
+
+ 409               		.loc 1 663 0
+ 410 01ce 9081      		ld r25,Z
+ 411 01d0 8913      		cpse r24,r25
+ 412 01d2 00C0      		rjmp .L35
+ 413 01d4 9781      		ldd r25,Z+7
+ 414 01d6 9130      		cpi r25,lo8(1)
+ 415 01d8 01F4      		brne .L35
+ 664:FrameMgr.c    ****                      (*(pTrackedObjectData + Y_LOWER_RIGHT_OFFSET) == trackedLineCount - 1) )
+ 416               		.loc 1 664 0
+ 417 01da C680      		ldd r12,Z+6
+ 418 01dc D12C      		mov r13,__zero_reg__
+ 419 01de C616      		cp r12,r22
+ 420 01e0 D706      		cpc r13,r23
+ 421 01e2 01F4      		brne .L35
+ 669:FrameMgr.c    **** 					lastLineXFinish = *(pTrackedObjectData + LAST_LINE_X_FINISH_OFFSET);
+ 422               		.loc 1 669 0
+ 423 01e4 9181      		ldd r25,Z+1
+ 424               	.LVL23:
+ 670:FrameMgr.c    **** 					
+ 425               		.loc 1 670 0
+ 426 01e6 D280      		ldd r13,Z+2
+ 427               	.LVL24:
+ 679:FrameMgr.c    **** 							(currPixelRunStart <= lastLineXFinish) )  ||
+ 428               		.loc 1 679 0
+ 429 01e8 4917      		cp r20,r25
+ 430 01ea 00F4      		brsh .+2
+ 431 01ec 00C0      		rjmp .L36
+ 432 01ee D416      		cp r13,r20
+ 433 01f0 00F4      		brsh .L37
+ 680:FrameMgr.c    **** 							
+ 434               		.loc 1 680 0
+ 435 01f2 3917      		cp r19,r25
+ 436 01f4 00F0      		brlo .L38
+ 695:FrameMgr.c    **** 							(currPixelRunFinish <= lastLineXFinish) ) ||
+ 437               		.loc 1 695 0
+ 438 01f6 D316      		cp r13,r19
+ 439 01f8 00F4      		brsh .+2
+ 440 01fa 00C0      		rjmp .L59
+ 441 01fc 00C0      		rjmp .L37
+ 442               	.L38:
+ 696:FrameMgr.c    **** 							
+ 443               		.loc 1 696 0
+ 444 01fe 9417      		cp r25,r20
+ 445 0200 00F0      		brlo .L35
+ 446               	.L51:
+ 712:FrameMgr.c    **** 							(currPixelRunFinish >= lastLineXFinish) ) )
+ 447               		.loc 1 712 0
+ 448 0202 3D15      		cp r19,r13
+ 449 0204 00F0      		brlo .L35
+ 450               	.L37:
+ 717:FrameMgr.c    **** 						*(pTrackedObjectData + LAST_LINE_X_FINISH_OFFSET) = currPixelRunFinish;
+ 451               		.loc 1 717 0
+ 452 0206 4183      		std Z+1,r20
+ 718:FrameMgr.c    **** 						
+ 453               		.loc 1 718 0
+ 454 0208 3283      		std Z+2,r19
+ 721:FrameMgr.c    **** 						{
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 23
+
+
+ 455               		.loc 1 721 0
+ 456 020a 8381      		ldd r24,Z+3
+ 457               	.LVL25:
+ 458 020c 4817      		cp r20,r24
+ 459 020e 00F4      		brsh .L40
+ 727:FrameMgr.c    **** 						}
+ 460               		.loc 1 727 0
+ 461 0210 4383      		std Z+3,r20
+ 462               	.L40:
+ 730:FrameMgr.c    **** 						{
+ 463               		.loc 1 730 0
+ 464 0212 8581      		ldd r24,Z+5
+ 465 0214 8317      		cp r24,r19
+ 466 0216 00F4      		brsh .L41
+ 734:FrameMgr.c    **** 						}
+ 467               		.loc 1 734 0
+ 468 0218 3583      		std Z+5,r19
+ 469               	.L41:
+ 738:FrameMgr.c    **** 						
+ 470               		.loc 1 738 0
+ 471 021a 5683      		std Z+6,r21
+ 472               	.LVL26:
+ 473 021c 00C0      		rjmp .L34
+ 474               	.LVL27:
+ 475               	.L35:
+ 749:FrameMgr.c    **** 			}
+ 476               		.loc 1 749 0
+ 477 021e 3896      		adiw r30,8
+ 478               	.LVL28:
+ 661:FrameMgr.c    **** 			{
+ 479               		.loc 1 661 0
+ 480 0220 90E0      		ldi r25,hi8(trackedObjectTable+64)
+ 481 0222 E030      		cpi r30,lo8(trackedObjectTable+64)
+ 482 0224 F907      		cpc r31,r25
+ 483 0226 01F4      		brne .L42
+ 484 0228 00C0      		rjmp .L60
+ 485               	.L52:
+ 486               	.LVL29:
+ 764:FrameMgr.c    ****                         
+ 487               		.loc 1 764 0
+ 488 022a F701      		movw r30,r14
+ 489 022c 9781      		ldd r25,Z+7
+ 490 022e 9923      		tst r25
+ 491 0230 01F0      		breq .L53
+ 768:FrameMgr.c    ****                     }
+ 492               		.loc 1 768 0
+ 493 0232 E0E0      		ldi r30,lo8(trackedObjectTable+8)
+ 494 0234 F0E0      		ldi r31,hi8(trackedObjectTable+8)
+ 495               	.LVL30:
+ 496               	.L45:
+ 764:FrameMgr.c    ****                         
+ 497               		.loc 1 764 0
+ 498 0236 9781      		ldd r25,Z+7
+ 499 0238 9923      		tst r25
+ 500 023a 01F0      		breq .L44
+ 768:FrameMgr.c    ****                     }
+ 501               		.loc 1 768 0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 24
+
+
+ 502 023c 3896      		adiw r30,8
+ 503               	.LVL31:
+ 762:FrameMgr.c    ****                     {
+ 504               		.loc 1 762 0
+ 505 023e 90E0      		ldi r25,hi8(trackedObjectTable+64)
+ 506 0240 E030      		cpi r30,lo8(trackedObjectTable+64)
+ 507 0242 F907      		cpc r31,r25
+ 508 0244 01F4      		brne .L45
+ 509 0246 00C0      		rjmp .L44
+ 510               	.LVL32:
+ 511               	.L53:
+ 764:FrameMgr.c    ****                         
+ 512               		.loc 1 764 0
+ 513 0248 E0E0      		ldi r30,lo8(trackedObjectTable)
+ 514 024a F0E0      		ldi r31,hi8(trackedObjectTable)
+ 515               	.LVL33:
+ 516               	.L44:
+ 774:FrameMgr.c    **** 					*(pTrackedObjectData + LAST_LINE_X_START_OFFSET)    = currPixelRunStart; 	/* lastLineXStart */
+ 517               		.loc 1 774 0
+ 518 024c 8083      		st Z,r24
+ 775:FrameMgr.c    **** 					*(pTrackedObjectData + LAST_LINE_X_FINISH_OFFSET)   = currPixelRunFinish;	/* lastLineXFinish *
+ 519               		.loc 1 775 0
+ 520 024e 4183      		std Z+1,r20
+ 776:FrameMgr.c    **** 					*(pTrackedObjectData + X_UPPER_LEFT_OFFSET)         = currPixelRunStart;	/* x_upperLeft */
+ 521               		.loc 1 776 0
+ 522 0250 3283      		std Z+2,r19
+ 777:FrameMgr.c    **** 					*(pTrackedObjectData + Y_UPPER_LEFT_OFFSET)         = trackedLineCount;	/* y_upperLeft */
+ 523               		.loc 1 777 0
+ 524 0252 4383      		std Z+3,r20
+ 778:FrameMgr.c    **** 					*(pTrackedObjectData + X_LOWER_RIGHT_OFFSET)        = currPixelRunFinish;	/* x_lowerRight */
+ 525               		.loc 1 778 0
+ 526 0254 5483      		std Z+4,r21
+ 779:FrameMgr.c    **** 					*(pTrackedObjectData + Y_LOWER_RIGHT_OFFSET)        = trackedLineCount;	/* y_lowerRight */
+ 527               		.loc 1 779 0
+ 528 0256 3583      		std Z+5,r19
+ 780:FrameMgr.c    ****                     *(pTrackedObjectData + VALID_OBJECT_OFFSET)         = TRUE;                /* o
+ 529               		.loc 1 780 0
+ 530 0258 5683      		std Z+6,r21
+ 531               		.loc 1 781 0
+ 532 025a A782      		std Z+7,r10
+ 782:FrameMgr.c    **** 						
+ 783:FrameMgr.c    **** 					numCurrTrackedObjects++;
+ 533               		.loc 1 783 0
+ 534 025c B394      		inc r11
+ 535               	.LVL34:
+ 536               	.L34:
+ 537 025e 1296      		adiw r26,2
+ 538               	.LVL35:
+ 784:FrameMgr.c    **** 				}
+ 785:FrameMgr.c    **** 			}
+ 786:FrameMgr.c    ****             
+ 787:FrameMgr.c    ****             /* move the pointer to the beginning of the next tracked object */
+ 788:FrameMgr.c    ****             pTrackedObjectData += SIZE_OF_TRACKED_OBJECT;
+ 789:FrameMgr.c    **** 		}
+ 790:FrameMgr.c    **** 	} while(currPixelRunFinish < ACTUAL_NUM_PIXELS_IN_A_LINE);
+ 539               		.loc 1 790 0
+ 540 0260 303B      		cpi r19,lo8(-80)
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 25
+
+
+ 541 0262 00F4      		brsh .+2
+ 542 0264 00C0      		rjmp .L46
+ 543 0266 B092 0000 		sts numCurrTrackedObjects,r11
+ 544               	.LVL36:
+ 545               	.LBE5:
+ 546               	.LBE4:
+ 460:FrameMgr.c    ****         {
+ 547               		.loc 1 460 0
+ 548 026a 852F      		mov r24,r21
+ 549 026c 8770      		andi r24,lo8(7)
+ 550 026e 8730      		cpi r24,lo8(7)
+ 551 0270 01F4      		brne .L47
+ 552 0272 E0E0      		ldi r30,lo8(trackedObjectTable)
+ 553 0274 F0E0      		ldi r31,hi8(trackedObjectTable)
+ 554               	.LVL37:
+ 555               	.L49:
+ 464:FrameMgr.c    ****                 {
+ 556               		.loc 1 464 0
+ 557 0276 8781      		ldd r24,Z+7
+ 558 0278 8130      		cpi r24,lo8(1)
+ 559 027a 01F4      		brne .L48
+ 468:FrameMgr.c    ****                           *(pTrackedObjectData + Y_UPPER_LEFT_OFFSET)) < MIN_OBJECT_TRACKING_HEIGHT
+ 560               		.loc 1 468 0
+ 561 027c 8681      		ldd r24,Z+6
+ 562 027e 90E0      		ldi r25,0
+ 563 0280 2481      		ldd r18,Z+4
+ 564 0282 BC01      		movw r22,r24
+ 565 0284 621B      		sub r22,r18
+ 566 0286 7109      		sbc r23,__zero_reg__
+ 567 0288 6330      		cpi r22,3
+ 568 028a 7105      		cpc r23,__zero_reg__
+ 569 028c 04F4      		brge .L48
+ 474:FrameMgr.c    ****                         {
+ 570               		.loc 1 474 0
+ 571 028e 9801      		movw r18,r16
+ 572 0290 281B      		sub r18,r24
+ 573 0292 390B      		sbc r19,r25
+ 574 0294 2330      		cpi r18,3
+ 575 0296 3105      		cpc r19,__zero_reg__
+ 576 0298 04F0      		brlt .L48
+ 477:FrameMgr.c    ****                             numCurrTrackedObjects--;
+ 577               		.loc 1 477 0
+ 578 029a 1782      		std Z+7,__zero_reg__
+ 478:FrameMgr.c    ****                         }
+ 579               		.loc 1 478 0
+ 580 029c BA94      		dec r11
+ 581               	.L48:
+ 482:FrameMgr.c    ****             }
+ 582               		.loc 1 482 0 discriminator 2
+ 583 029e 3896      		adiw r30,8
+ 584               	.LVL38:
+ 462:FrameMgr.c    ****             {
+ 585               		.loc 1 462 0 discriminator 2
+ 586 02a0 30E0      		ldi r19,hi8(trackedObjectTable+64)
+ 587 02a2 E030      		cpi r30,lo8(trackedObjectTable+64)
+ 588 02a4 F307      		cpc r31,r19
+ 589 02a6 01F4      		brne .L49
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 26
+
+
+ 590 02a8 B092 0000 		sts numCurrTrackedObjects,r11
+ 591               	.LVL39:
+ 592               	.L47:
+ 486:FrameMgr.c    **** 		if (trackedLineCount == ACTUAL_NUM_LINES_IN_A_FRAME)
+ 593               		.loc 1 486 0
+ 594 02ac 5F5F      		subi r21,lo8(-(1))
+ 595 02ae 5093 0000 		sts trackedLineCount,r21
+ 487:FrameMgr.c    **** 		{
+ 596               		.loc 1 487 0
+ 597 02b2 5039      		cpi r21,lo8(-112)
+ 598 02b4 01F4      		brne .L50
+ 491:FrameMgr.c    **** 			/* disable the PCLK counting overflow interrupt */
+ 599               		.loc 1 491 0
+ 600 02b6 80E2      		ldi r24,lo8(32)
+ 601 02b8 00D0      		rcall Exec_writeEventFifo
+ 602               	.LVL40:
+ 493:FrameMgr.c    **** 			trackedLineCount = 0;
+ 603               		.loc 1 493 0
+ 604 02ba 89B7      		in r24,0x39
+ 605 02bc 8B7F      		andi r24,lo8(-5)
+ 606 02be 89BF      		out 0x39,r24
+ 494:FrameMgr.c    **** 		}
+ 607               		.loc 1 494 0
+ 608 02c0 1092 0000 		sts trackedLineCount,__zero_reg__
+ 609 02c4 00C0      		rjmp .L29
+ 610               	.L50:
+ 498:FrameMgr.c    **** 		}
+ 611               		.loc 1 498 0
+ 612 02c6 8091 0000 		lds r24,fastEventBitmask
+ 613 02ca 8260      		ori r24,lo8(2)
+ 614 02cc 8093 0000 		sts fastEventBitmask,r24
+ 506:FrameMgr.c    **** 
+ 615               		.loc 1 506 0
+ 616 02d0 00C0      		rjmp .L29
+ 617               	.LVL41:
+ 618               	.L36:
+ 619               	.LBB7:
+ 620               	.LBB6:
+ 680:FrameMgr.c    **** 							
+ 621               		.loc 1 680 0
+ 622 02d2 3917      		cp r19,r25
+ 623 02d4 00F0      		brlo .+2
+ 624 02d6 00C0      		rjmp .L37
+ 625 02d8 00C0      		rjmp .L51
+ 626               	.L59:
+ 696:FrameMgr.c    **** 							
+ 627               		.loc 1 696 0
+ 628 02da 9417      		cp r25,r20
+ 629 02dc 00F4      		brsh .+2
+ 630 02de 00C0      		rjmp .L35
+ 631 02e0 00C0      		rjmp .L37
+ 632               	.LVL42:
+ 633               	.L60:
+ 757:FrameMgr.c    **** 				{                
+ 634               		.loc 1 757 0
+ 635 02e2 97E0      		ldi r25,lo8(7)
+ 636 02e4 9B15      		cp r25,r11
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 27
+
+
+ 637 02e6 00F0      		brlo .+2
+ 638 02e8 00C0      		rjmp .L52
+ 639 02ea 00C0      		rjmp .L34
+ 640               	.LVL43:
+ 641               	.L29:
+ 642               	/* epilogue start */
+ 643               	.LBE6:
+ 644               	.LBE7:
+ 506:FrameMgr.c    **** 
+ 645               		.loc 1 506 0
+ 646 02ec 0F90      		pop __tmp_reg__
+ 647 02ee DF91      		pop r29
+ 648 02f0 CF91      		pop r28
+ 649 02f2 1F91      		pop r17
+ 650 02f4 0F91      		pop r16
+ 651 02f6 FF90      		pop r15
+ 652 02f8 EF90      		pop r14
+ 653 02fa DF90      		pop r13
+ 654 02fc CF90      		pop r12
+ 655 02fe BF90      		pop r11
+ 656 0300 AF90      		pop r10
+ 657 0302 0895      		ret
+ 658               		.cfi_endproc
+ 659               	.LFE8:
+ 660               		.size	FrameMgr_processLine, .-FrameMgr_processLine
+ 661               	.global	FrameMgr_processFrame
+ 662               		.type	FrameMgr_processFrame, @function
+ 663               	FrameMgr_processFrame:
+ 664               	.LFB9:
+ 517:FrameMgr.c    **** 	unsigned char i,k,color;
+ 665               		.loc 1 517 0
+ 666               		.cfi_startproc
+ 667 0304 6F92      		push r6
+ 668               	.LCFI12:
+ 669               		.cfi_def_cfa_offset 3
+ 670               		.cfi_offset 6, -2
+ 671 0306 7F92      		push r7
+ 672               	.LCFI13:
+ 673               		.cfi_def_cfa_offset 4
+ 674               		.cfi_offset 7, -3
+ 675 0308 8F92      		push r8
+ 676               	.LCFI14:
+ 677               		.cfi_def_cfa_offset 5
+ 678               		.cfi_offset 8, -4
+ 679 030a 9F92      		push r9
+ 680               	.LCFI15:
+ 681               		.cfi_def_cfa_offset 6
+ 682               		.cfi_offset 9, -5
+ 683 030c AF92      		push r10
+ 684               	.LCFI16:
+ 685               		.cfi_def_cfa_offset 7
+ 686               		.cfi_offset 10, -6
+ 687 030e BF92      		push r11
+ 688               	.LCFI17:
+ 689               		.cfi_def_cfa_offset 8
+ 690               		.cfi_offset 11, -7
+ 691 0310 CF92      		push r12
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 28
+
+
+ 692               	.LCFI18:
+ 693               		.cfi_def_cfa_offset 9
+ 694               		.cfi_offset 12, -8
+ 695 0312 DF92      		push r13
+ 696               	.LCFI19:
+ 697               		.cfi_def_cfa_offset 10
+ 698               		.cfi_offset 13, -9
+ 699 0314 EF92      		push r14
+ 700               	.LCFI20:
+ 701               		.cfi_def_cfa_offset 11
+ 702               		.cfi_offset 14, -10
+ 703 0316 FF92      		push r15
+ 704               	.LCFI21:
+ 705               		.cfi_def_cfa_offset 12
+ 706               		.cfi_offset 15, -11
+ 707 0318 0F93      		push r16
+ 708               	.LCFI22:
+ 709               		.cfi_def_cfa_offset 13
+ 710               		.cfi_offset 16, -12
+ 711 031a 1F93      		push r17
+ 712               	.LCFI23:
+ 713               		.cfi_def_cfa_offset 14
+ 714               		.cfi_offset 17, -13
+ 715 031c CF93      		push r28
+ 716               	.LCFI24:
+ 717               		.cfi_def_cfa_offset 15
+ 718               		.cfi_offset 28, -14
+ 719 031e DF93      		push r29
+ 720               	.LCFI25:
+ 721               		.cfi_def_cfa_offset 16
+ 722               		.cfi_offset 29, -15
+ 723               	/* prologue: function */
+ 724               	/* frame size = 0 */
+ 725               	/* stack size = 14 */
+ 726               	.L__stack_usage = 14
+ 727               	.LVL44:
+ 553:FrameMgr.c    **** 	{		
+ 728               		.loc 1 553 0
+ 729 0320 8091 0000 		lds r24,numCurrTrackedObjects
+ 730 0324 8823      		tst r24
+ 731 0326 01F4      		brne .+2
+ 732 0328 00C0      		rjmp .L62
+ 555:FrameMgr.c    ****         /* reset the pointer */
+ 733               		.loc 1 555 0
+ 734 032a 8AE0      		ldi r24,lo8(10)
+ 735 032c 00D0      		rcall UIMgr_writeTxFifo
+ 736               	.LVL45:
+ 559:FrameMgr.c    **** 		for (i=0; i<MAX_TRACKED_OBJECTS; i++)
+ 737               		.loc 1 559 0
+ 738 032e 8091 0000 		lds r24,numCurrTrackedObjects
+ 739 0332 00D0      		rcall UIMgr_writeTxFifo
+ 740               	.LVL46:
+ 557:FrameMgr.c    ****         
+ 741               		.loc 1 557 0
+ 742 0334 C0E0      		ldi r28,lo8(trackedObjectTable)
+ 743 0336 D0E0      		ldi r29,hi8(trackedObjectTable)
+ 570:FrameMgr.c    ****                 else if (color == 64) k=1;
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 29
+
+
+ 744               		.loc 1 570 0
+ 745 0338 D12C      		mov r13,__zero_reg__
+ 571:FrameMgr.c    ****                 else if (color == 32) k=2;
+ 746               		.loc 1 571 0
+ 747 033a CC24      		clr r12
+ 748 033c C394      		inc r12
+ 572:FrameMgr.c    ****                 else if (color == 16) k=3;
+ 749               		.loc 1 572 0
+ 750 033e 6894      		set
+ 751 0340 BB24      		clr r11
+ 752 0342 B1F8      		bld r11,1
+ 573:FrameMgr.c    ****                 else if (color == 8)  k=4;
+ 753               		.loc 1 573 0
+ 754 0344 0F2E      		mov __tmp_reg__,r31
+ 755 0346 F3E0      		ldi r31,lo8(3)
+ 756 0348 AF2E      		mov r10,r31
+ 757 034a F02D      		mov r31,__tmp_reg__
+ 574:FrameMgr.c    ****                 else if (color == 4)  k=5;
+ 758               		.loc 1 574 0
+ 759 034c 6894      		set
+ 760 034e 9924      		clr r9
+ 761 0350 92F8      		bld r9,2
+ 575:FrameMgr.c    ****                 else if (color == 2)  k=6;
+ 762               		.loc 1 575 0
+ 763 0352 0F2E      		mov __tmp_reg__,r31
+ 764 0354 F5E0      		ldi r31,lo8(5)
+ 765 0356 8F2E      		mov r8,r31
+ 766 0358 F02D      		mov r31,__tmp_reg__
+ 576:FrameMgr.c    ****                 else if (color == 1)  k=7;
+ 767               		.loc 1 576 0
+ 768 035a 0F2E      		mov __tmp_reg__,r31
+ 769 035c F6E0      		ldi r31,lo8(6)
+ 770 035e 7F2E      		mov r7,r31
+ 771 0360 F02D      		mov r31,__tmp_reg__
+ 577:FrameMgr.c    ****                 
+ 772               		.loc 1 577 0
+ 773 0362 0F2E      		mov __tmp_reg__,r31
+ 774 0364 F7E0      		ldi r31,lo8(7)
+ 775 0366 6F2E      		mov r6,r31
+ 776 0368 F02D      		mov r31,__tmp_reg__
+ 777               	.LVL47:
+ 778               	.L65:
+ 564:FrameMgr.c    ****             {
+ 779               		.loc 1 564 0
+ 780 036a 8F81      		ldd r24,Y+7
+ 781 036c 8130      		cpi r24,lo8(1)
+ 782 036e 01F4      		brne .L63
+ 783               	.LVL48:
+ 569:FrameMgr.c    ****                 if (color == 128) k=0;
+ 784               		.loc 1 569 0
+ 785 0370 8881      		ld r24,Y
+ 786               	.LVL49:
+ 570:FrameMgr.c    ****                 else if (color == 64) k=1;
+ 787               		.loc 1 570 0
+ 788 0372 8038      		cpi r24,lo8(-128)
+ 789 0374 01F0      		breq .L66
+ 571:FrameMgr.c    ****                 else if (color == 32) k=2;
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 30
+
+
+ 790               		.loc 1 571 0
+ 791 0376 8034      		cpi r24,lo8(64)
+ 792 0378 01F0      		breq .L67
+ 572:FrameMgr.c    ****                 else if (color == 16) k=3;
+ 793               		.loc 1 572 0
+ 794 037a 8032      		cpi r24,lo8(32)
+ 795 037c 01F0      		breq .L68
+ 573:FrameMgr.c    ****                 else if (color == 8)  k=4;
+ 796               		.loc 1 573 0
+ 797 037e 8031      		cpi r24,lo8(16)
+ 798 0380 01F0      		breq .L69
+ 574:FrameMgr.c    ****                 else if (color == 4)  k=5;
+ 799               		.loc 1 574 0
+ 800 0382 8830      		cpi r24,lo8(8)
+ 801 0384 01F0      		breq .L70
+ 575:FrameMgr.c    ****                 else if (color == 2)  k=6;
+ 802               		.loc 1 575 0
+ 803 0386 8430      		cpi r24,lo8(4)
+ 804 0388 01F0      		breq .L71
+ 576:FrameMgr.c    ****                 else if (color == 1)  k=7;
+ 805               		.loc 1 576 0
+ 806 038a 8230      		cpi r24,lo8(2)
+ 807 038c 01F0      		breq .L72
+ 577:FrameMgr.c    ****                 
+ 808               		.loc 1 577 0
+ 809 038e 8130      		cpi r24,lo8(1)
+ 810 0390 01F4      		brne .L73
+ 811 0392 862D      		mov r24,r6
+ 812               	.LVL50:
+ 813 0394 00C0      		rjmp .L64
+ 814               	.LVL51:
+ 815               	.L66:
+ 570:FrameMgr.c    ****                 else if (color == 64) k=1;
+ 816               		.loc 1 570 0
+ 817 0396 8D2D      		mov r24,r13
+ 818               	.LVL52:
+ 819 0398 00C0      		rjmp .L64
+ 820               	.LVL53:
+ 821               	.L67:
+ 571:FrameMgr.c    ****                 else if (color == 32) k=2;
+ 822               		.loc 1 571 0
+ 823 039a 8C2D      		mov r24,r12
+ 824               	.LVL54:
+ 825 039c 00C0      		rjmp .L64
+ 826               	.LVL55:
+ 827               	.L68:
+ 572:FrameMgr.c    ****                 else if (color == 16) k=3;
+ 828               		.loc 1 572 0
+ 829 039e 8B2D      		mov r24,r11
+ 830               	.LVL56:
+ 831 03a0 00C0      		rjmp .L64
+ 832               	.LVL57:
+ 833               	.L69:
+ 573:FrameMgr.c    ****                 else if (color == 8)  k=4;
+ 834               		.loc 1 573 0
+ 835 03a2 8A2D      		mov r24,r10
+ 836               	.LVL58:
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 31
+
+
+ 837 03a4 00C0      		rjmp .L64
+ 838               	.LVL59:
+ 839               	.L70:
+ 574:FrameMgr.c    ****                 else if (color == 4)  k=5;
+ 840               		.loc 1 574 0
+ 841 03a6 892D      		mov r24,r9
+ 842               	.LVL60:
+ 843 03a8 00C0      		rjmp .L64
+ 844               	.LVL61:
+ 845               	.L71:
+ 575:FrameMgr.c    ****                 else if (color == 2)  k=6;
+ 846               		.loc 1 575 0
+ 847 03aa 882D      		mov r24,r8
+ 848               	.LVL62:
+ 849 03ac 00C0      		rjmp .L64
+ 850               	.LVL63:
+ 851               	.L72:
+ 576:FrameMgr.c    ****                 else if (color == 1)  k=7;
+ 852               		.loc 1 576 0
+ 853 03ae 872D      		mov r24,r7
+ 854               	.LVL64:
+ 855 03b0 00C0      		rjmp .L64
+ 856               	.LVL65:
+ 857               	.L73:
+ 568:FrameMgr.c    ****                 color = *(pTableData + COLOR_OFFSET);
+ 858               		.loc 1 568 0
+ 859 03b2 8D2D      		mov r24,r13
+ 860               	.LVL66:
+ 861               	.L64:
+ 579:FrameMgr.c    ****                 tmpUpperLeftY = *(pTableData + Y_UPPER_LEFT_OFFSET);		/* get the upper left Y */		
+ 862               		.loc 1 579 0
+ 863 03b4 EB80      		ldd r14,Y+3
+ 864               	.LVL67:
+ 580:FrameMgr.c    ****                 tmpLowerRightX = *(pTableData + X_LOWER_RIGHT_OFFSET);		/* get the lower right X */
+ 865               		.loc 1 580 0
+ 866 03b6 FC80      		ldd r15,Y+4
+ 867               	.LVL68:
+ 581:FrameMgr.c    ****                 tmpLowerRightY = *(pTableData + Y_LOWER_RIGHT_OFFSET);		/* get the lower right Y */
+ 868               		.loc 1 581 0
+ 869 03b8 0D81      		ldd r16,Y+5
+ 870               	.LVL69:
+ 582:FrameMgr.c    ****                 
+ 871               		.loc 1 582 0
+ 872 03ba 1E81      		ldd r17,Y+6
+ 873               	.LVL70:
+ 584:FrameMgr.c    ****                 UIMgr_writeTxFifo(tmpUpperLeftX);
+ 874               		.loc 1 584 0
+ 875 03bc 00D0      		rcall UIMgr_writeTxFifo
+ 876               	.LVL71:
+ 585:FrameMgr.c    ****                 UIMgr_writeTxFifo(tmpUpperLeftY);
+ 877               		.loc 1 585 0
+ 878 03be 8E2D      		mov r24,r14
+ 879 03c0 00D0      		rcall UIMgr_writeTxFifo
+ 880               	.LVL72:
+ 586:FrameMgr.c    ****                 UIMgr_writeTxFifo(tmpLowerRightX);
+ 881               		.loc 1 586 0
+ 882 03c2 8F2D      		mov r24,r15
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 32
+
+
+ 883 03c4 00D0      		rcall UIMgr_writeTxFifo
+ 884               	.LVL73:
+ 587:FrameMgr.c    ****                 UIMgr_writeTxFifo(tmpLowerRightY);			
+ 885               		.loc 1 587 0
+ 886 03c6 802F      		mov r24,r16
+ 887 03c8 00D0      		rcall UIMgr_writeTxFifo
+ 888               	.LVL74:
+ 588:FrameMgr.c    ****             }
+ 889               		.loc 1 588 0
+ 890 03ca 812F      		mov r24,r17
+ 891 03cc 00D0      		rcall UIMgr_writeTxFifo
+ 892               	.LVL75:
+ 893               	.L63:
+ 592:FrameMgr.c    ****         }
+ 894               		.loc 1 592 0 discriminator 2
+ 895 03ce 2896      		adiw r28,8
+ 896               	.LVL76:
+ 560:FrameMgr.c    **** 		{
+ 897               		.loc 1 560 0 discriminator 2
+ 898 03d0 80E0      		ldi r24,hi8(trackedObjectTable+64)
+ 899 03d2 C030      		cpi r28,lo8(trackedObjectTable+64)
+ 900 03d4 D807      		cpc r29,r24
+ 901 03d6 01F4      		brne .L65
+ 596:FrameMgr.c    **** 	}	
+ 902               		.loc 1 596 0
+ 903 03d8 8FEF      		ldi r24,lo8(-1)
+ 904 03da 00D0      		rcall UIMgr_writeTxFifo
+ 905               	.LVL77:
+ 906               	.L62:
+ 605:FrameMgr.c    **** }
+ 907               		.loc 1 605 0
+ 908 03dc 84E0      		ldi r24,lo8(4)
+ 909 03de 00D0      		rcall Exec_writeEventFifo
+ 910               	.LVL78:
+ 911               	/* epilogue start */
+ 606:FrameMgr.c    **** 
+ 912               		.loc 1 606 0
+ 913 03e0 DF91      		pop r29
+ 914 03e2 CF91      		pop r28
+ 915 03e4 1F91      		pop r17
+ 916 03e6 0F91      		pop r16
+ 917 03e8 FF90      		pop r15
+ 918 03ea EF90      		pop r14
+ 919 03ec DF90      		pop r13
+ 920 03ee CF90      		pop r12
+ 921 03f0 BF90      		pop r11
+ 922 03f2 AF90      		pop r10
+ 923 03f4 9F90      		pop r9
+ 924 03f6 8F90      		pop r8
+ 925 03f8 7F90      		pop r7
+ 926 03fa 6F90      		pop r6
+ 927 03fc 0895      		ret
+ 928               		.cfi_endproc
+ 929               	.LFE9:
+ 930               		.size	FrameMgr_processFrame, .-FrameMgr_processFrame
+ 931               	.global	FrameMgr_dispatchEvent
+ 932               		.type	FrameMgr_dispatchEvent, @function
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 33
+
+
+ 933               	FrameMgr_dispatchEvent:
+ 934               	.LFB5:
+ 205:FrameMgr.c    **** 	switch(event)
+ 935               		.loc 1 205 0
+ 936               		.cfi_startproc
+ 937               	.LVL79:
+ 938               	/* prologue: function */
+ 939               	/* frame size = 0 */
+ 940               	/* stack size = 0 */
+ 941               	.L__stack_usage = 0
+ 206:FrameMgr.c    **** 	{
+ 942               		.loc 1 206 0
+ 943 03fe 8430      		cpi r24,lo8(4)
+ 944 0400 01F0      		breq .L77
+ 945 0402 00F4      		brsh .L78
+ 946 0404 8130      		cpi r24,lo8(1)
+ 947 0406 01F0      		breq .L79
+ 948 0408 8230      		cpi r24,lo8(2)
+ 949 040a 01F0      		breq .L80
+ 950 040c 0895      		ret
+ 951               	.L78:
+ 952 040e 8038      		cpi r24,lo8(-128)
+ 953 0410 01F0      		breq .L81
+ 954 0412 8138      		cpi r24,lo8(-127)
+ 955 0414 01F0      		breq .L82
+ 956 0416 8032      		cpi r24,lo8(32)
+ 957 0418 01F4      		brne .L75
+ 958 041a 00C0      		rjmp .L83
+ 959               	.L80:
+ 211:FrameMgr.c    **** 			CamConfig_sendFifoCmds();
+ 960               		.loc 1 211 0
+ 961 041c 61E0      		ldi r22,lo8(1)
+ 962 041e 81E1      		ldi r24,lo8(17)
+ 963               	.LVL80:
+ 964 0420 00D0      		rcall CamConfig_setCamReg
+ 965               	.LVL81:
+ 212:FrameMgr.c    **** 			Utility_delay(1000);		/* allow the new frame rate to settle */
+ 966               		.loc 1 212 0
+ 967 0422 00D0      		rcall CamConfig_sendFifoCmds
+ 968               	.LVL82:
+ 213:FrameMgr.c    **** 			lineCount = 0;
+ 969               		.loc 1 213 0
+ 970 0424 88EE      		ldi r24,lo8(-24)
+ 971 0426 93E0      		ldi r25,lo8(3)
+ 972 0428 00D0      		rcall Utility_delay
+ 973               	.LVL83:
+ 214:FrameMgr.c    **** 			currentState = ST_FrameMgr_DumpingFrame;
+ 974               		.loc 1 214 0
+ 975 042a 1092 0000 		sts lineCount,__zero_reg__
+ 215:FrameMgr.c    **** 			//CamIntAsm_waitForNewDumpFrame(currentLineBuffer,previousLineBuffer);
+ 976               		.loc 1 215 0
+ 977 042e 82E0      		ldi r24,lo8(2)
+ 978 0430 8093 0000 		sts currentState,r24
+ 217:FrameMgr.c    **** 			break;
+ 979               		.loc 1 217 0
+ 980 0434 00D0      		rcall FrameMgr_acquireLine
+ 981               	.LVL84:
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 34
+
+
+ 218:FrameMgr.c    **** 		
+ 982               		.loc 1 218 0
+ 983 0436 0895      		ret
+ 984               	.LVL85:
+ 985               	.L81:
+ 221:FrameMgr.c    **** 			FrameMgr_acquireFrame();
+ 986               		.loc 1 221 0
+ 987 0438 81E0      		ldi r24,lo8(1)
+ 988               	.LVL86:
+ 989 043a 8093 0000 		sts currentState,r24
+ 222:FrameMgr.c    **** 			break;
+ 990               		.loc 1 222 0
+ 991 043e 00D0      		rcall FrameMgr_acquireFrame
+ 992               	.LVL87:
+ 223:FrameMgr.c    **** 			
+ 993               		.loc 1 223 0
+ 994 0440 0895      		ret
+ 995               	.LVL88:
+ 996               	.L83:
+ 226:FrameMgr.c    **** 			break;
+ 997               		.loc 1 226 0
+ 998 0442 00D0      		rcall FrameMgr_processFrame
+ 999               	.LVL89:
+ 227:FrameMgr.c    **** 		
+ 1000               		.loc 1 227 0
+ 1001 0444 0895      		ret
+ 1002               	.LVL90:
+ 1003               	.L77:
+ 230:FrameMgr.c    **** 			break;
+ 1004               		.loc 1 230 0
+ 1005 0446 00D0      		rcall FrameMgr_acquireFrame
+ 1006               	.LVL91:
+ 231:FrameMgr.c    **** 
+ 1007               		.loc 1 231 0
+ 1008 0448 0895      		ret
+ 1009               	.LVL92:
+ 1010               	.L79:
+ 234:FrameMgr.c    **** 			{
+ 1011               		.loc 1 234 0
+ 1012 044a 8091 0000 		lds r24,currentState
+ 1013               	.LVL93:
+ 1014 044e 8823      		tst r24
+ 1015 0450 01F0      		breq .L75
+ 240:FrameMgr.c    **** 			}
+ 1016               		.loc 1 240 0
+ 1017 0452 84E0      		ldi r24,lo8(4)
+ 1018 0454 00D0      		rcall Exec_writeEventFifo
+ 1019               	.LVL94:
+ 1020 0456 0895      		ret
+ 1021               	.LVL95:
+ 1022               	.L82:
+ 246:FrameMgr.c    **** 			break;
+ 1023               		.loc 1 246 0
+ 1024 0458 1092 0000 		sts currentState,__zero_reg__
+ 1025               	.LVL96:
+ 1026               	.L75:
+ 1027 045c 0895      		ret
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 35
+
+
+ 1028               		.cfi_endproc
+ 1029               	.LFE5:
+ 1030               		.size	FrameMgr_dispatchEvent, .-FrameMgr_dispatchEvent
+ 1031               		.local	trackedLineCount
+ 1032               		.comm	trackedLineCount,1,1
+ 1033               		.local	numCurrTrackedObjects
+ 1034               		.comm	numCurrTrackedObjects,1,1
+ 1035               		.local	currentState
+ 1036               		.comm	currentState,1,1
+ 1037               		.local	lineCount
+ 1038               		.comm	lineCount,1,1
+ 1039               		.local	trackedObjectTable
+ 1040               		.comm	trackedObjectTable,64,1
+ 1041               	.Letext0:
+ 1042               		.file 2 "c:\\program files (x86)\\atmel\\studio\\7.0\\toolchain\\avr8\\avr8-gnu-toolchain\\avr\\in
+ 1043               		.file 3 "CommonDefs.h"
+ 1044               		.file 4 "Executive.h"
+ 1045               		.file 5 "CamInterface.h"
+ 1046               		.file 6 "UartInterface.h"
+ 1047               		.file 7 "CamConfig.h"
+ 1048               		.file 8 "UIMgr.h"
+ 1049               		.file 9 "Utility.h"
+ 1050               		.section	.debug_info,"",@progbits
+ 1051               	.Ldebug_info0:
+ 1052 0000 A806 0000 		.long	0x6a8
+ 1053 0004 0200      		.word	0x2
+ 1054 0006 0000 0000 		.long	.Ldebug_abbrev0
+ 1055 000a 04        		.byte	0x4
+ 1056 000b 01        		.uleb128 0x1
+ 1057 000c 0000 0000 		.long	.LASF71
+ 1058 0010 0C        		.byte	0xc
+ 1059 0011 0000 0000 		.long	.LASF72
+ 1060 0015 0000 0000 		.long	.LASF73
+ 1061 0019 0000 0000 		.long	.Ltext0
+ 1062 001d 0000 0000 		.long	.Letext0
+ 1063 0021 0000 0000 		.long	.Ldebug_line0
+ 1064 0025 02        		.uleb128 0x2
+ 1065 0026 02        		.byte	0x2
+ 1066 0027 07        		.byte	0x7
+ 1067 0028 0000 0000 		.long	.LASF0
+ 1068 002c 03        		.uleb128 0x3
+ 1069 002d 02        		.byte	0x2
+ 1070 002e 05        		.byte	0x5
+ 1071 002f 696E 7400 		.string	"int"
+ 1072 0033 02        		.uleb128 0x2
+ 1073 0034 04        		.byte	0x4
+ 1074 0035 05        		.byte	0x5
+ 1075 0036 0000 0000 		.long	.LASF1
+ 1076 003a 02        		.uleb128 0x2
+ 1077 003b 01        		.byte	0x1
+ 1078 003c 06        		.byte	0x6
+ 1079 003d 0000 0000 		.long	.LASF2
+ 1080 0041 04        		.uleb128 0x4
+ 1081 0042 0000 0000 		.long	.LASF7
+ 1082 0046 02        		.byte	0x2
+ 1083 0047 7E        		.byte	0x7e
+ 1084 0048 4C00 0000 		.long	0x4c
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 36
+
+
+ 1085 004c 02        		.uleb128 0x2
+ 1086 004d 01        		.byte	0x1
+ 1087 004e 08        		.byte	0x8
+ 1088 004f 0000 0000 		.long	.LASF3
+ 1089 0053 02        		.uleb128 0x2
+ 1090 0054 04        		.byte	0x4
+ 1091 0055 07        		.byte	0x7
+ 1092 0056 0000 0000 		.long	.LASF4
+ 1093 005a 02        		.uleb128 0x2
+ 1094 005b 08        		.byte	0x8
+ 1095 005c 05        		.byte	0x5
+ 1096 005d 0000 0000 		.long	.LASF5
+ 1097 0061 02        		.uleb128 0x2
+ 1098 0062 08        		.byte	0x8
+ 1099 0063 07        		.byte	0x7
+ 1100 0064 0000 0000 		.long	.LASF6
+ 1101 0068 04        		.uleb128 0x4
+ 1102 0069 0000 0000 		.long	.LASF8
+ 1103 006d 03        		.byte	0x3
+ 1104 006e 38        		.byte	0x38
+ 1105 006f 4C00 0000 		.long	0x4c
+ 1106 0073 05        		.uleb128 0x5
+ 1107 0074 01        		.byte	0x1
+ 1108 0075 4C00 0000 		.long	0x4c
+ 1109 0079 01        		.byte	0x1
+ 1110 007a 42        		.byte	0x42
+ 1111 007b 9200 0000 		.long	0x92
+ 1112 007f 06        		.uleb128 0x6
+ 1113 0080 0000 0000 		.long	.LASF9
+ 1114 0084 00        		.byte	0
+ 1115 0085 06        		.uleb128 0x6
+ 1116 0086 0000 0000 		.long	.LASF10
+ 1117 008a 01        		.byte	0x1
+ 1118 008b 06        		.uleb128 0x6
+ 1119 008c 0000 0000 		.long	.LASF11
+ 1120 0090 02        		.byte	0x2
+ 1121 0091 00        		.byte	0
+ 1122 0092 04        		.uleb128 0x4
+ 1123 0093 0000 0000 		.long	.LASF12
+ 1124 0097 01        		.byte	0x1
+ 1125 0098 48        		.byte	0x48
+ 1126 0099 4C00 0000 		.long	0x4c
+ 1127 009d 05        		.uleb128 0x5
+ 1128 009e 01        		.byte	0x1
+ 1129 009f 4C00 0000 		.long	0x4c
+ 1130 00a3 01        		.byte	0x1
+ 1131 00a4 73        		.byte	0x73
+ 1132 00a5 E000 0000 		.long	0xe0
+ 1133 00a9 06        		.uleb128 0x6
+ 1134 00aa 0000 0000 		.long	.LASF13
+ 1135 00ae 00        		.byte	0
+ 1136 00af 06        		.uleb128 0x6
+ 1137 00b0 0000 0000 		.long	.LASF14
+ 1138 00b4 01        		.byte	0x1
+ 1139 00b5 06        		.uleb128 0x6
+ 1140 00b6 0000 0000 		.long	.LASF15
+ 1141 00ba 02        		.byte	0x2
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 37
+
+
+ 1142 00bb 06        		.uleb128 0x6
+ 1143 00bc 0000 0000 		.long	.LASF16
+ 1144 00c0 03        		.byte	0x3
+ 1145 00c1 06        		.uleb128 0x6
+ 1146 00c2 0000 0000 		.long	.LASF17
+ 1147 00c6 04        		.byte	0x4
+ 1148 00c7 06        		.uleb128 0x6
+ 1149 00c8 0000 0000 		.long	.LASF18
+ 1150 00cc 05        		.byte	0x5
+ 1151 00cd 06        		.uleb128 0x6
+ 1152 00ce 0000 0000 		.long	.LASF19
+ 1153 00d2 06        		.byte	0x6
+ 1154 00d3 06        		.uleb128 0x6
+ 1155 00d4 0000 0000 		.long	.LASF20
+ 1156 00d8 07        		.byte	0x7
+ 1157 00d9 06        		.uleb128 0x6
+ 1158 00da 0000 0000 		.long	.LASF21
+ 1159 00de 08        		.byte	0x8
+ 1160 00df 00        		.byte	0
+ 1161 00e0 04        		.uleb128 0x4
+ 1162 00e1 0000 0000 		.long	.LASF22
+ 1163 00e5 01        		.byte	0x1
+ 1164 00e6 7F        		.byte	0x7f
+ 1165 00e7 4C00 0000 		.long	0x4c
+ 1166 00eb 07        		.uleb128 0x7
+ 1167 00ec 08        		.byte	0x8
+ 1168 00ed 01        		.byte	0x1
+ 1169 00ee 83        		.byte	0x83
+ 1170 00ef 6401 0000 		.long	0x164
+ 1171 00f3 08        		.uleb128 0x8
+ 1172 00f4 0000 0000 		.long	.LASF23
+ 1173 00f8 01        		.byte	0x1
+ 1174 00f9 85        		.byte	0x85
+ 1175 00fa E000 0000 		.long	0xe0
+ 1176 00fe 02        		.byte	0x2
+ 1177 00ff 23        		.byte	0x23
+ 1178 0100 00        		.uleb128 0
+ 1179 0101 08        		.uleb128 0x8
+ 1180 0102 0000 0000 		.long	.LASF24
+ 1181 0106 01        		.byte	0x1
+ 1182 0107 86        		.byte	0x86
+ 1183 0108 4C00 0000 		.long	0x4c
+ 1184 010c 02        		.byte	0x2
+ 1185 010d 23        		.byte	0x23
+ 1186 010e 01        		.uleb128 0x1
+ 1187 010f 08        		.uleb128 0x8
+ 1188 0110 0000 0000 		.long	.LASF25
+ 1189 0114 01        		.byte	0x1
+ 1190 0115 87        		.byte	0x87
+ 1191 0116 4C00 0000 		.long	0x4c
+ 1192 011a 02        		.byte	0x2
+ 1193 011b 23        		.byte	0x23
+ 1194 011c 02        		.uleb128 0x2
+ 1195 011d 08        		.uleb128 0x8
+ 1196 011e 0000 0000 		.long	.LASF26
+ 1197 0122 01        		.byte	0x1
+ 1198 0123 88        		.byte	0x88
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 38
+
+
+ 1199 0124 4C00 0000 		.long	0x4c
+ 1200 0128 02        		.byte	0x2
+ 1201 0129 23        		.byte	0x23
+ 1202 012a 03        		.uleb128 0x3
+ 1203 012b 08        		.uleb128 0x8
+ 1204 012c 0000 0000 		.long	.LASF27
+ 1205 0130 01        		.byte	0x1
+ 1206 0131 89        		.byte	0x89
+ 1207 0132 4C00 0000 		.long	0x4c
+ 1208 0136 02        		.byte	0x2
+ 1209 0137 23        		.byte	0x23
+ 1210 0138 04        		.uleb128 0x4
+ 1211 0139 08        		.uleb128 0x8
+ 1212 013a 0000 0000 		.long	.LASF28
+ 1213 013e 01        		.byte	0x1
+ 1214 013f 8A        		.byte	0x8a
+ 1215 0140 4C00 0000 		.long	0x4c
+ 1216 0144 02        		.byte	0x2
+ 1217 0145 23        		.byte	0x23
+ 1218 0146 05        		.uleb128 0x5
+ 1219 0147 08        		.uleb128 0x8
+ 1220 0148 0000 0000 		.long	.LASF29
+ 1221 014c 01        		.byte	0x1
+ 1222 014d 8B        		.byte	0x8b
+ 1223 014e 4C00 0000 		.long	0x4c
+ 1224 0152 02        		.byte	0x2
+ 1225 0153 23        		.byte	0x23
+ 1226 0154 06        		.uleb128 0x6
+ 1227 0155 08        		.uleb128 0x8
+ 1228 0156 0000 0000 		.long	.LASF30
+ 1229 015a 01        		.byte	0x1
+ 1230 015b 8C        		.byte	0x8c
+ 1231 015c 4C00 0000 		.long	0x4c
+ 1232 0160 02        		.byte	0x2
+ 1233 0161 23        		.byte	0x23
+ 1234 0162 07        		.uleb128 0x7
+ 1235 0163 00        		.byte	0
+ 1236 0164 04        		.uleb128 0x4
+ 1237 0165 0000 0000 		.long	.LASF31
+ 1238 0169 01        		.byte	0x1
+ 1239 016a 91        		.byte	0x91
+ 1240 016b EB00 0000 		.long	0xeb
+ 1241 016f 09        		.uleb128 0x9
+ 1242 0170 01        		.byte	0x1
+ 1243 0171 0000 0000 		.long	.LASF74
+ 1244 0175 01        		.byte	0x1
+ 1245 0176 BE        		.byte	0xbe
+ 1246 0177 01        		.byte	0x1
+ 1247 0178 0000 0000 		.long	.LFB4
+ 1248 017c 0000 0000 		.long	.LFE4
+ 1249 0180 03        		.byte	0x3
+ 1250 0181 92        		.byte	0x92
+ 1251 0182 20        		.uleb128 0x20
+ 1252 0183 02        		.sleb128 2
+ 1253 0184 01        		.byte	0x1
+ 1254 0185 0A        		.uleb128 0xa
+ 1255 0186 01        		.byte	0x1
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 39
+
+
+ 1256 0187 0000 0000 		.long	.LASF32
+ 1257 018b 01        		.byte	0x1
+ 1258 018c 0401      		.word	0x104
+ 1259 018e 01        		.byte	0x1
+ 1260 018f 0000 0000 		.long	.LFB6
+ 1261 0193 0000 0000 		.long	.LFE6
+ 1262 0197 03        		.byte	0x3
+ 1263 0198 92        		.byte	0x92
+ 1264 0199 20        		.uleb128 0x20
+ 1265 019a 02        		.sleb128 2
+ 1266 019b 01        		.byte	0x1
+ 1267 019c AA01 0000 		.long	0x1aa
+ 1268 01a0 0B        		.uleb128 0xb
+ 1269 01a1 0000 0000 		.long	.LVL0
+ 1270 01a5 4306 0000 		.long	0x643
+ 1271 01a9 00        		.byte	0
+ 1272 01aa 0A        		.uleb128 0xa
+ 1273 01ab 01        		.byte	0x1
+ 1274 01ac 0000 0000 		.long	.LASF33
+ 1275 01b0 01        		.byte	0x1
+ 1276 01b1 1E01      		.word	0x11e
+ 1277 01b3 01        		.byte	0x1
+ 1278 01b4 0000 0000 		.long	.LFB7
+ 1279 01b8 0000 0000 		.long	.LFE7
+ 1280 01bc 03        		.byte	0x3
+ 1281 01bd 92        		.byte	0x92
+ 1282 01be 20        		.uleb128 0x20
+ 1283 01bf 02        		.sleb128 2
+ 1284 01c0 01        		.byte	0x1
+ 1285 01c1 E801 0000 		.long	0x1e8
+ 1286 01c5 0C        		.uleb128 0xc
+ 1287 01c6 0000 0000 		.long	.LASF42
+ 1288 01ca 01        		.byte	0x1
+ 1289 01cb 2001      		.word	0x120
+ 1290 01cd 4C00 0000 		.long	0x4c
+ 1291 01d1 0000 0000 		.long	.LLST0
+ 1292 01d5 0B        		.uleb128 0xb
+ 1293 01d6 0000 0000 		.long	.LVL4
+ 1294 01da 5006 0000 		.long	0x650
+ 1295 01de 0B        		.uleb128 0xb
+ 1296 01df 0000 0000 		.long	.LVL5
+ 1297 01e3 4306 0000 		.long	0x643
+ 1298 01e7 00        		.byte	0
+ 1299 01e8 0D        		.uleb128 0xd
+ 1300 01e9 0000 0000 		.long	.LASF75
+ 1301 01ed 01        		.byte	0x1
+ 1302 01ee 6902      		.word	0x269
+ 1303 01f0 01        		.byte	0x1
+ 1304 01f1 01        		.byte	0x1
+ 1305 01f2 6D02 0000 		.long	0x26d
+ 1306 01f6 0E        		.uleb128 0xe
+ 1307 01f7 0000 0000 		.long	.LASF34
+ 1308 01fb 01        		.byte	0x1
+ 1309 01fc 6B02      		.word	0x26b
+ 1310 01fe E000 0000 		.long	0xe0
+ 1311 0202 0E        		.uleb128 0xe
+ 1312 0203 0000 0000 		.long	.LASF35
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 40
+
+
+ 1313 0207 01        		.byte	0x1
+ 1314 0208 6C02      		.word	0x26c
+ 1315 020a 6D02 0000 		.long	0x26d
+ 1316 020e 0E        		.uleb128 0xe
+ 1317 020f 0000 0000 		.long	.LASF36
+ 1318 0213 01        		.byte	0x1
+ 1319 0214 6D02      		.word	0x26d
+ 1320 0216 6D02 0000 		.long	0x26d
+ 1321 021a 0E        		.uleb128 0xe
+ 1322 021b 0000 0000 		.long	.LASF37
+ 1323 021f 01        		.byte	0x1
+ 1324 0220 6E02      		.word	0x26e
+ 1325 0222 4C00 0000 		.long	0x4c
+ 1326 0226 0E        		.uleb128 0xe
+ 1327 0227 0000 0000 		.long	.LASF38
+ 1328 022b 01        		.byte	0x1
+ 1329 022c 6F02      		.word	0x26f
+ 1330 022e 4C00 0000 		.long	0x4c
+ 1331 0232 0E        		.uleb128 0xe
+ 1332 0233 0000 0000 		.long	.LASF24
+ 1333 0237 01        		.byte	0x1
+ 1334 0238 7002      		.word	0x270
+ 1335 023a 4C00 0000 		.long	0x4c
+ 1336 023e 0E        		.uleb128 0xe
+ 1337 023f 0000 0000 		.long	.LASF25
+ 1338 0243 01        		.byte	0x1
+ 1339 0244 7102      		.word	0x271
+ 1340 0246 4C00 0000 		.long	0x4c
+ 1341 024a 0E        		.uleb128 0xe
+ 1342 024b 0000 0000 		.long	.LASF39
+ 1343 024f 01        		.byte	0x1
+ 1344 0250 7202      		.word	0x272
+ 1345 0252 4C00 0000 		.long	0x4c
+ 1346 0256 0F        		.uleb128 0xf
+ 1347 0257 6900      		.string	"i"
+ 1348 0259 01        		.byte	0x1
+ 1349 025a 7302      		.word	0x273
+ 1350 025c 4C00 0000 		.long	0x4c
+ 1351 0260 0E        		.uleb128 0xe
+ 1352 0261 0000 0000 		.long	.LASF40
+ 1353 0265 01        		.byte	0x1
+ 1354 0266 7402      		.word	0x274
+ 1355 0268 6800 0000 		.long	0x68
+ 1356 026c 00        		.byte	0
+ 1357 026d 10        		.uleb128 0x10
+ 1358 026e 02        		.byte	0x2
+ 1359 026f 4C00 0000 		.long	0x4c
+ 1360 0273 11        		.uleb128 0x11
+ 1361 0274 01        		.byte	0x1
+ 1362 0275 0000 0000 		.long	.LASF41
+ 1363 0279 01        		.byte	0x1
+ 1364 027a 5501      		.word	0x155
+ 1365 027c 01        		.byte	0x1
+ 1366 027d 0000 0000 		.long	.LFB8
+ 1367 0281 0000 0000 		.long	.LFE8
+ 1368 0285 0000 0000 		.long	.LLST1
+ 1369 0289 01        		.byte	0x1
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 41
+
+
+ 1370 028a A303 0000 		.long	0x3a3
+ 1371 028e 12        		.uleb128 0x12
+ 1372 028f 6900      		.string	"i"
+ 1373 0291 01        		.byte	0x1
+ 1374 0292 5701      		.word	0x157
+ 1375 0294 4C00 0000 		.long	0x4c
+ 1376 0298 0000 0000 		.long	.LLST2
+ 1377 029c 13        		.uleb128 0x13
+ 1378 029d 0000 0000 		.long	.LASF43
+ 1379 02a1 01        		.byte	0x1
+ 1380 02a2 5801      		.word	0x158
+ 1381 02a4 A303 0000 		.long	0x3a3
+ 1382 02a8 02        		.byte	0x2
+ 1383 02a9 8C        		.byte	0x8c
+ 1384 02aa 01        		.sleb128 1
+ 1385 02ab 0C        		.uleb128 0xc
+ 1386 02ac 0000 0000 		.long	.LASF36
+ 1387 02b0 01        		.byte	0x1
+ 1388 02b1 5901      		.word	0x159
+ 1389 02b3 6D02 0000 		.long	0x26d
+ 1390 02b7 0000 0000 		.long	.LLST3
+ 1391 02bb 14        		.uleb128 0x14
+ 1392 02bc E801 0000 		.long	0x1e8
+ 1393 02c0 0000 0000 		.long	.LBB4
+ 1394 02c4 0000 0000 		.long	.Ldebug_ranges0+0
+ 1395 02c8 01        		.byte	0x1
+ 1396 02c9 C201      		.word	0x1c2
+ 1397 02cb 3003 0000 		.long	0x330
+ 1398 02cf 15        		.uleb128 0x15
+ 1399 02d0 0000 0000 		.long	.Ldebug_ranges0+0
+ 1400 02d4 16        		.uleb128 0x16
+ 1401 02d5 F601 0000 		.long	0x1f6
+ 1402 02d9 0000 0000 		.long	.LLST4
+ 1403 02dd 16        		.uleb128 0x16
+ 1404 02de 0202 0000 		.long	0x202
+ 1405 02e2 0000 0000 		.long	.LLST5
+ 1406 02e6 16        		.uleb128 0x16
+ 1407 02e7 0E02 0000 		.long	0x20e
+ 1408 02eb 0000 0000 		.long	.LLST6
+ 1409 02ef 16        		.uleb128 0x16
+ 1410 02f0 1A02 0000 		.long	0x21a
+ 1411 02f4 0000 0000 		.long	.LLST7
+ 1412 02f8 16        		.uleb128 0x16
+ 1413 02f9 2602 0000 		.long	0x226
+ 1414 02fd 0000 0000 		.long	.LLST8
+ 1415 0301 16        		.uleb128 0x16
+ 1416 0302 3202 0000 		.long	0x232
+ 1417 0306 0000 0000 		.long	.LLST9
+ 1418 030a 16        		.uleb128 0x16
+ 1419 030b 3E02 0000 		.long	0x23e
+ 1420 030f 0000 0000 		.long	.LLST10
+ 1421 0313 16        		.uleb128 0x16
+ 1422 0314 4A02 0000 		.long	0x24a
+ 1423 0318 0000 0000 		.long	.LLST11
+ 1424 031c 16        		.uleb128 0x16
+ 1425 031d 5602 0000 		.long	0x256
+ 1426 0321 0000 0000 		.long	.LLST12
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 42
+
+
+ 1427 0325 16        		.uleb128 0x16
+ 1428 0326 6002 0000 		.long	0x260
+ 1429 032a 0000 0000 		.long	.LLST13
+ 1430 032e 00        		.byte	0
+ 1431 032f 00        		.byte	0
+ 1432 0330 17        		.uleb128 0x17
+ 1433 0331 0000 0000 		.long	.LVL7
+ 1434 0335 5D06 0000 		.long	0x65d
+ 1435 0339 4303 0000 		.long	0x343
+ 1436 033d 18        		.uleb128 0x18
+ 1437 033e 01        		.byte	0x1
+ 1438 033f 68        		.byte	0x68
+ 1439 0340 01        		.byte	0x1
+ 1440 0341 3B        		.byte	0x3b
+ 1441 0342 00        		.byte	0
+ 1442 0343 0B        		.uleb128 0xb
+ 1443 0344 0000 0000 		.long	.LVL8
+ 1444 0348 5D06 0000 		.long	0x65d
+ 1445 034c 0B        		.uleb128 0xb
+ 1446 034d 0000 0000 		.long	.LVL10
+ 1447 0351 5D06 0000 		.long	0x65d
+ 1448 0355 0B        		.uleb128 0xb
+ 1449 0356 0000 0000 		.long	.LVL11
+ 1450 035a 5D06 0000 		.long	0x65d
+ 1451 035e 17        		.uleb128 0x17
+ 1452 035f 0000 0000 		.long	.LVL13
+ 1453 0363 5D06 0000 		.long	0x65d
+ 1454 0367 7103 0000 		.long	0x371
+ 1455 036b 18        		.uleb128 0x18
+ 1456 036c 01        		.byte	0x1
+ 1457 036d 68        		.byte	0x68
+ 1458 036e 01        		.byte	0x1
+ 1459 036f 3F        		.byte	0x3f
+ 1460 0370 00        		.byte	0
+ 1461 0371 17        		.uleb128 0x17
+ 1462 0372 0000 0000 		.long	.LVL14
+ 1463 0376 6A06 0000 		.long	0x66a
+ 1464 037a 8903 0000 		.long	0x389
+ 1465 037e 18        		.uleb128 0x18
+ 1466 037f 01        		.byte	0x1
+ 1467 0380 68        		.byte	0x68
+ 1468 0381 01        		.byte	0x1
+ 1469 0382 41        		.byte	0x41
+ 1470 0383 18        		.uleb128 0x18
+ 1471 0384 01        		.byte	0x1
+ 1472 0385 66        		.byte	0x66
+ 1473 0386 01        		.byte	0x1
+ 1474 0387 30        		.byte	0x30
+ 1475 0388 00        		.byte	0
+ 1476 0389 0B        		.uleb128 0xb
+ 1477 038a 0000 0000 		.long	.LVL15
+ 1478 038e 7706 0000 		.long	0x677
+ 1479 0392 19        		.uleb128 0x19
+ 1480 0393 0000 0000 		.long	.LVL40
+ 1481 0397 8406 0000 		.long	0x684
+ 1482 039b 18        		.uleb128 0x18
+ 1483 039c 01        		.byte	0x1
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 43
+
+
+ 1484 039d 68        		.byte	0x68
+ 1485 039e 02        		.byte	0x2
+ 1486 039f 08        		.byte	0x8
+ 1487 03a0 20        		.byte	0x20
+ 1488 03a1 00        		.byte	0
+ 1489 03a2 00        		.byte	0
+ 1490 03a3 1A        		.uleb128 0x1a
+ 1491 03a4 4C00 0000 		.long	0x4c
+ 1492 03a8 11        		.uleb128 0x11
+ 1493 03a9 01        		.byte	0x1
+ 1494 03aa 0000 0000 		.long	.LASF44
+ 1495 03ae 01        		.byte	0x1
+ 1496 03af 0402      		.word	0x204
+ 1497 03b1 01        		.byte	0x1
+ 1498 03b2 0000 0000 		.long	.LFB9
+ 1499 03b6 0000 0000 		.long	.LFE9
+ 1500 03ba 0000 0000 		.long	.LLST14
+ 1501 03be 01        		.byte	0x1
+ 1502 03bf D804 0000 		.long	0x4d8
+ 1503 03c3 12        		.uleb128 0x12
+ 1504 03c4 6900      		.string	"i"
+ 1505 03c6 01        		.byte	0x1
+ 1506 03c7 0602      		.word	0x206
+ 1507 03c9 4C00 0000 		.long	0x4c
+ 1508 03cd 0000 0000 		.long	.LLST15
+ 1509 03d1 12        		.uleb128 0x12
+ 1510 03d2 6B00      		.string	"k"
+ 1511 03d4 01        		.byte	0x1
+ 1512 03d5 0602      		.word	0x206
+ 1513 03d7 4C00 0000 		.long	0x4c
+ 1514 03db 0000 0000 		.long	.LLST16
+ 1515 03df 0C        		.uleb128 0xc
+ 1516 03e0 0000 0000 		.long	.LASF23
+ 1517 03e4 01        		.byte	0x1
+ 1518 03e5 0602      		.word	0x206
+ 1519 03e7 4C00 0000 		.long	0x4c
+ 1520 03eb 0000 0000 		.long	.LLST17
+ 1521 03ef 0C        		.uleb128 0xc
+ 1522 03f0 0000 0000 		.long	.LASF45
+ 1523 03f4 01        		.byte	0x1
+ 1524 03f5 0B02      		.word	0x20b
+ 1525 03f7 6D02 0000 		.long	0x26d
+ 1526 03fb 0000 0000 		.long	.LLST18
+ 1527 03ff 0C        		.uleb128 0xc
+ 1528 0400 0000 0000 		.long	.LASF46
+ 1529 0404 01        		.byte	0x1
+ 1530 0405 0C02      		.word	0x20c
+ 1531 0407 4C00 0000 		.long	0x4c
+ 1532 040b 0000 0000 		.long	.LLST19
+ 1533 040f 0C        		.uleb128 0xc
+ 1534 0410 0000 0000 		.long	.LASF47
+ 1535 0414 01        		.byte	0x1
+ 1536 0415 0C02      		.word	0x20c
+ 1537 0417 4C00 0000 		.long	0x4c
+ 1538 041b 0000 0000 		.long	.LLST20
+ 1539 041f 0C        		.uleb128 0xc
+ 1540 0420 0000 0000 		.long	.LASF48
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 44
+
+
+ 1541 0424 01        		.byte	0x1
+ 1542 0425 0C02      		.word	0x20c
+ 1543 0427 4C00 0000 		.long	0x4c
+ 1544 042b 0000 0000 		.long	.LLST21
+ 1545 042f 0C        		.uleb128 0xc
+ 1546 0430 0000 0000 		.long	.LASF49
+ 1547 0434 01        		.byte	0x1
+ 1548 0435 0C02      		.word	0x20c
+ 1549 0437 4C00 0000 		.long	0x4c
+ 1550 043b 0000 0000 		.long	.LLST22
+ 1551 043f 17        		.uleb128 0x17
+ 1552 0440 0000 0000 		.long	.LVL45
+ 1553 0444 9106 0000 		.long	0x691
+ 1554 0448 5204 0000 		.long	0x452
+ 1555 044c 18        		.uleb128 0x18
+ 1556 044d 01        		.byte	0x1
+ 1557 044e 68        		.byte	0x68
+ 1558 044f 01        		.byte	0x1
+ 1559 0450 3A        		.byte	0x3a
+ 1560 0451 00        		.byte	0
+ 1561 0452 0B        		.uleb128 0xb
+ 1562 0453 0000 0000 		.long	.LVL46
+ 1563 0457 9106 0000 		.long	0x691
+ 1564 045b 0B        		.uleb128 0xb
+ 1565 045c 0000 0000 		.long	.LVL71
+ 1566 0460 9106 0000 		.long	0x691
+ 1567 0464 17        		.uleb128 0x17
+ 1568 0465 0000 0000 		.long	.LVL72
+ 1569 0469 9106 0000 		.long	0x691
+ 1570 046d 7804 0000 		.long	0x478
+ 1571 0471 18        		.uleb128 0x18
+ 1572 0472 01        		.byte	0x1
+ 1573 0473 68        		.byte	0x68
+ 1574 0474 02        		.byte	0x2
+ 1575 0475 7E        		.byte	0x7e
+ 1576 0476 00        		.sleb128 0
+ 1577 0477 00        		.byte	0
+ 1578 0478 17        		.uleb128 0x17
+ 1579 0479 0000 0000 		.long	.LVL73
+ 1580 047d 9106 0000 		.long	0x691
+ 1581 0481 8C04 0000 		.long	0x48c
+ 1582 0485 18        		.uleb128 0x18
+ 1583 0486 01        		.byte	0x1
+ 1584 0487 68        		.byte	0x68
+ 1585 0488 02        		.byte	0x2
+ 1586 0489 7F        		.byte	0x7f
+ 1587 048a 00        		.sleb128 0
+ 1588 048b 00        		.byte	0
+ 1589 048c 17        		.uleb128 0x17
+ 1590 048d 0000 0000 		.long	.LVL74
+ 1591 0491 9106 0000 		.long	0x691
+ 1592 0495 A004 0000 		.long	0x4a0
+ 1593 0499 18        		.uleb128 0x18
+ 1594 049a 01        		.byte	0x1
+ 1595 049b 68        		.byte	0x68
+ 1596 049c 02        		.byte	0x2
+ 1597 049d 80        		.byte	0x80
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 45
+
+
+ 1598 049e 00        		.sleb128 0
+ 1599 049f 00        		.byte	0
+ 1600 04a0 17        		.uleb128 0x17
+ 1601 04a1 0000 0000 		.long	.LVL75
+ 1602 04a5 9106 0000 		.long	0x691
+ 1603 04a9 B404 0000 		.long	0x4b4
+ 1604 04ad 18        		.uleb128 0x18
+ 1605 04ae 01        		.byte	0x1
+ 1606 04af 68        		.byte	0x68
+ 1607 04b0 02        		.byte	0x2
+ 1608 04b1 81        		.byte	0x81
+ 1609 04b2 00        		.sleb128 0
+ 1610 04b3 00        		.byte	0
+ 1611 04b4 17        		.uleb128 0x17
+ 1612 04b5 0000 0000 		.long	.LVL77
+ 1613 04b9 9106 0000 		.long	0x691
+ 1614 04bd C804 0000 		.long	0x4c8
+ 1615 04c1 18        		.uleb128 0x18
+ 1616 04c2 01        		.byte	0x1
+ 1617 04c3 68        		.byte	0x68
+ 1618 04c4 02        		.byte	0x2
+ 1619 04c5 09        		.byte	0x9
+ 1620 04c6 FF        		.byte	0xff
+ 1621 04c7 00        		.byte	0
+ 1622 04c8 19        		.uleb128 0x19
+ 1623 04c9 0000 0000 		.long	.LVL78
+ 1624 04cd 8406 0000 		.long	0x684
+ 1625 04d1 18        		.uleb128 0x18
+ 1626 04d2 01        		.byte	0x1
+ 1627 04d3 68        		.byte	0x68
+ 1628 04d4 01        		.byte	0x1
+ 1629 04d5 34        		.byte	0x34
+ 1630 04d6 00        		.byte	0
+ 1631 04d7 00        		.byte	0
+ 1632 04d8 1B        		.uleb128 0x1b
+ 1633 04d9 01        		.byte	0x1
+ 1634 04da 0000 0000 		.long	.LASF50
+ 1635 04de 01        		.byte	0x1
+ 1636 04df CC        		.byte	0xcc
+ 1637 04e0 01        		.byte	0x1
+ 1638 04e1 0000 0000 		.long	.LFB5
+ 1639 04e5 0000 0000 		.long	.LFE5
+ 1640 04e9 03        		.byte	0x3
+ 1641 04ea 92        		.byte	0x92
+ 1642 04eb 20        		.uleb128 0x20
+ 1643 04ec 02        		.sleb128 2
+ 1644 04ed 01        		.byte	0x1
+ 1645 04ee 7005 0000 		.long	0x570
+ 1646 04f2 1C        		.uleb128 0x1c
+ 1647 04f3 0000 0000 		.long	.LASF76
+ 1648 04f7 01        		.byte	0x1
+ 1649 04f8 CC        		.byte	0xcc
+ 1650 04f9 4C00 0000 		.long	0x4c
+ 1651 04fd 0000 0000 		.long	.LLST23
+ 1652 0501 17        		.uleb128 0x17
+ 1653 0502 0000 0000 		.long	.LVL81
+ 1654 0506 6A06 0000 		.long	0x66a
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 46
+
+
+ 1655 050a 1905 0000 		.long	0x519
+ 1656 050e 18        		.uleb128 0x18
+ 1657 050f 01        		.byte	0x1
+ 1658 0510 68        		.byte	0x68
+ 1659 0511 01        		.byte	0x1
+ 1660 0512 41        		.byte	0x41
+ 1661 0513 18        		.uleb128 0x18
+ 1662 0514 01        		.byte	0x1
+ 1663 0515 66        		.byte	0x66
+ 1664 0516 01        		.byte	0x1
+ 1665 0517 31        		.byte	0x31
+ 1666 0518 00        		.byte	0
+ 1667 0519 0B        		.uleb128 0xb
+ 1668 051a 0000 0000 		.long	.LVL82
+ 1669 051e 7706 0000 		.long	0x677
+ 1670 0522 17        		.uleb128 0x17
+ 1671 0523 0000 0000 		.long	.LVL83
+ 1672 0527 9E06 0000 		.long	0x69e
+ 1673 052b 3C05 0000 		.long	0x53c
+ 1674 052f 18        		.uleb128 0x18
+ 1675 0530 06        		.byte	0x6
+ 1676 0531 68        		.byte	0x68
+ 1677 0532 93        		.byte	0x93
+ 1678 0533 01        		.uleb128 0x1
+ 1679 0534 69        		.byte	0x69
+ 1680 0535 93        		.byte	0x93
+ 1681 0536 01        		.uleb128 0x1
+ 1682 0537 03        		.byte	0x3
+ 1683 0538 0A        		.byte	0xa
+ 1684 0539 E803      		.word	0x3e8
+ 1685 053b 00        		.byte	0
+ 1686 053c 0B        		.uleb128 0xb
+ 1687 053d 0000 0000 		.long	.LVL84
+ 1688 0541 AA01 0000 		.long	0x1aa
+ 1689 0545 0B        		.uleb128 0xb
+ 1690 0546 0000 0000 		.long	.LVL87
+ 1691 054a 8501 0000 		.long	0x185
+ 1692 054e 0B        		.uleb128 0xb
+ 1693 054f 0000 0000 		.long	.LVL89
+ 1694 0553 A803 0000 		.long	0x3a8
+ 1695 0557 0B        		.uleb128 0xb
+ 1696 0558 0000 0000 		.long	.LVL91
+ 1697 055c 8501 0000 		.long	0x185
+ 1698 0560 19        		.uleb128 0x19
+ 1699 0561 0000 0000 		.long	.LVL94
+ 1700 0565 8406 0000 		.long	0x684
+ 1701 0569 18        		.uleb128 0x18
+ 1702 056a 01        		.byte	0x1
+ 1703 056b 68        		.byte	0x68
+ 1704 056c 01        		.byte	0x1
+ 1705 056d 34        		.byte	0x34
+ 1706 056e 00        		.byte	0
+ 1707 056f 00        		.byte	0
+ 1708 0570 1D        		.uleb128 0x1d
+ 1709 0571 6401 0000 		.long	0x164
+ 1710 0575 8005 0000 		.long	0x580
+ 1711 0579 1E        		.uleb128 0x1e
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 47
+
+
+ 1712 057a 8005 0000 		.long	0x580
+ 1713 057e 07        		.byte	0x7
+ 1714 057f 00        		.byte	0
+ 1715 0580 02        		.uleb128 0x2
+ 1716 0581 02        		.byte	0x2
+ 1717 0582 07        		.byte	0x7
+ 1718 0583 0000 0000 		.long	.LASF51
+ 1719 0587 1F        		.uleb128 0x1f
+ 1720 0588 0000 0000 		.long	.LASF52
+ 1721 058c 01        		.byte	0x1
+ 1722 058d A2        		.byte	0xa2
+ 1723 058e 7005 0000 		.long	0x570
+ 1724 0592 05        		.byte	0x5
+ 1725 0593 03        		.byte	0x3
+ 1726 0594 0000 0000 		.long	trackedObjectTable
+ 1727 0598 1F        		.uleb128 0x1f
+ 1728 0599 0000 0000 		.long	.LASF53
+ 1729 059d 01        		.byte	0x1
+ 1730 059e A3        		.byte	0xa3
+ 1731 059f B005 0000 		.long	0x5b0
+ 1732 05a3 06        		.byte	0x6
+ 1733 05a4 03        		.byte	0x3
+ 1734 05a5 0000 0000 		.long	trackedObjectTable
+ 1735 05a9 9F        		.byte	0x9f
+ 1736 05aa 10        		.uleb128 0x10
+ 1737 05ab 02        		.byte	0x2
+ 1738 05ac 6401 0000 		.long	0x164
+ 1739 05b0 20        		.uleb128 0x20
+ 1740 05b1 AA05 0000 		.long	0x5aa
+ 1741 05b5 1F        		.uleb128 0x1f
+ 1742 05b6 0000 0000 		.long	.LASF54
+ 1743 05ba 01        		.byte	0x1
+ 1744 05bb A4        		.byte	0xa4
+ 1745 05bc 4C00 0000 		.long	0x4c
+ 1746 05c0 05        		.byte	0x5
+ 1747 05c1 03        		.byte	0x3
+ 1748 05c2 0000 0000 		.long	lineCount
+ 1749 05c6 1F        		.uleb128 0x1f
+ 1750 05c7 0000 0000 		.long	.LASF55
+ 1751 05cb 01        		.byte	0x1
+ 1752 05cc A5        		.byte	0xa5
+ 1753 05cd 9200 0000 		.long	0x92
+ 1754 05d1 05        		.byte	0x5
+ 1755 05d2 03        		.byte	0x3
+ 1756 05d3 0000 0000 		.long	currentState
+ 1757 05d7 1F        		.uleb128 0x1f
+ 1758 05d8 0000 0000 		.long	.LASF56
+ 1759 05dc 01        		.byte	0x1
+ 1760 05dd A6        		.byte	0xa6
+ 1761 05de 4C00 0000 		.long	0x4c
+ 1762 05e2 05        		.byte	0x5
+ 1763 05e3 03        		.byte	0x3
+ 1764 05e4 0000 0000 		.long	numCurrTrackedObjects
+ 1765 05e8 21        		.uleb128 0x21
+ 1766 05e9 0000 0000 		.long	.LASF57
+ 1767 05ed 01        		.byte	0x1
+ 1768 05ee A7        		.byte	0xa7
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 48
+
+
+ 1769 05ef 4C00 0000 		.long	0x4c
+ 1770 05f3 1F        		.uleb128 0x1f
+ 1771 05f4 0000 0000 		.long	.LASF58
+ 1772 05f8 01        		.byte	0x1
+ 1773 05f9 A8        		.byte	0xa8
+ 1774 05fa 4C00 0000 		.long	0x4c
+ 1775 05fe 05        		.byte	0x5
+ 1776 05ff 03        		.byte	0x3
+ 1777 0600 0000 0000 		.long	trackedLineCount
+ 1778 0604 22        		.uleb128 0x22
+ 1779 0605 0000 0000 		.long	.LASF59
+ 1780 0609 04        		.byte	0x4
+ 1781 060a 38        		.byte	0x38
+ 1782 060b 4C00 0000 		.long	0x4c
+ 1783 060f 01        		.byte	0x1
+ 1784 0610 01        		.byte	0x1
+ 1785 0611 1D        		.uleb128 0x1d
+ 1786 0612 4C00 0000 		.long	0x4c
+ 1787 0616 1C06 0000 		.long	0x61c
+ 1788 061a 23        		.uleb128 0x23
+ 1789 061b 00        		.byte	0
+ 1790 061c 22        		.uleb128 0x22
+ 1791 061d 0000 0000 		.long	.LASF60
+ 1792 0621 05        		.byte	0x5
+ 1793 0622 44        		.byte	0x44
+ 1794 0623 1106 0000 		.long	0x611
+ 1795 0627 01        		.byte	0x1
+ 1796 0628 01        		.byte	0x1
+ 1797 0629 22        		.uleb128 0x22
+ 1798 062a 0000 0000 		.long	.LASF61
+ 1799 062e 05        		.byte	0x5
+ 1800 062f 45        		.byte	0x45
+ 1801 0630 1106 0000 		.long	0x611
+ 1802 0634 01        		.byte	0x1
+ 1803 0635 01        		.byte	0x1
+ 1804 0636 22        		.uleb128 0x22
+ 1805 0637 0000 0000 		.long	.LASF62
+ 1806 063b 05        		.byte	0x5
+ 1807 063c 46        		.byte	0x46
+ 1808 063d 1106 0000 		.long	0x611
+ 1809 0641 01        		.byte	0x1
+ 1810 0642 01        		.byte	0x1
+ 1811 0643 24        		.uleb128 0x24
+ 1812 0644 01        		.byte	0x1
+ 1813 0645 01        		.byte	0x1
+ 1814 0646 0000 0000 		.long	.LASF63
+ 1815 064a 0000 0000 		.long	.LASF63
+ 1816 064e 01        		.byte	0x1
+ 1817 064f B2        		.byte	0xb2
+ 1818 0650 24        		.uleb128 0x24
+ 1819 0651 01        		.byte	0x1
+ 1820 0652 01        		.byte	0x1
+ 1821 0653 0000 0000 		.long	.LASF64
+ 1822 0657 0000 0000 		.long	.LASF64
+ 1823 065b 01        		.byte	0x1
+ 1824 065c B3        		.byte	0xb3
+ 1825 065d 24        		.uleb128 0x24
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 49
+
+
+ 1826 065e 01        		.byte	0x1
+ 1827 065f 01        		.byte	0x1
+ 1828 0660 0000 0000 		.long	.LASF65
+ 1829 0664 0000 0000 		.long	.LASF65
+ 1830 0668 06        		.byte	0x6
+ 1831 0669 31        		.byte	0x31
+ 1832 066a 24        		.uleb128 0x24
+ 1833 066b 01        		.byte	0x1
+ 1834 066c 01        		.byte	0x1
+ 1835 066d 0000 0000 		.long	.LASF66
+ 1836 0671 0000 0000 		.long	.LASF66
+ 1837 0675 07        		.byte	0x7
+ 1838 0676 3D        		.byte	0x3d
+ 1839 0677 24        		.uleb128 0x24
+ 1840 0678 01        		.byte	0x1
+ 1841 0679 01        		.byte	0x1
+ 1842 067a 0000 0000 		.long	.LASF67
+ 1843 067e 0000 0000 		.long	.LASF67
+ 1844 0682 07        		.byte	0x7
+ 1845 0683 3E        		.byte	0x3e
+ 1846 0684 24        		.uleb128 0x24
+ 1847 0685 01        		.byte	0x1
+ 1848 0686 01        		.byte	0x1
+ 1849 0687 0000 0000 		.long	.LASF68
+ 1850 068b 0000 0000 		.long	.LASF68
+ 1851 068f 04        		.byte	0x4
+ 1852 0690 35        		.byte	0x35
+ 1853 0691 24        		.uleb128 0x24
+ 1854 0692 01        		.byte	0x1
+ 1855 0693 01        		.byte	0x1
+ 1856 0694 0000 0000 		.long	.LASF69
+ 1857 0698 0000 0000 		.long	.LASF69
+ 1858 069c 08        		.byte	0x8
+ 1859 069d 47        		.byte	0x47
+ 1860 069e 24        		.uleb128 0x24
+ 1861 069f 01        		.byte	0x1
+ 1862 06a0 01        		.byte	0x1
+ 1863 06a1 0000 0000 		.long	.LASF70
+ 1864 06a5 0000 0000 		.long	.LASF70
+ 1865 06a9 09        		.byte	0x9
+ 1866 06aa 2D        		.byte	0x2d
+ 1867 06ab 00        		.byte	0
+ 1868               		.section	.debug_abbrev,"",@progbits
+ 1869               	.Ldebug_abbrev0:
+ 1870 0000 01        		.uleb128 0x1
+ 1871 0001 11        		.uleb128 0x11
+ 1872 0002 01        		.byte	0x1
+ 1873 0003 25        		.uleb128 0x25
+ 1874 0004 0E        		.uleb128 0xe
+ 1875 0005 13        		.uleb128 0x13
+ 1876 0006 0B        		.uleb128 0xb
+ 1877 0007 03        		.uleb128 0x3
+ 1878 0008 0E        		.uleb128 0xe
+ 1879 0009 1B        		.uleb128 0x1b
+ 1880 000a 0E        		.uleb128 0xe
+ 1881 000b 11        		.uleb128 0x11
+ 1882 000c 01        		.uleb128 0x1
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 50
+
+
+ 1883 000d 12        		.uleb128 0x12
+ 1884 000e 01        		.uleb128 0x1
+ 1885 000f 10        		.uleb128 0x10
+ 1886 0010 06        		.uleb128 0x6
+ 1887 0011 00        		.byte	0
+ 1888 0012 00        		.byte	0
+ 1889 0013 02        		.uleb128 0x2
+ 1890 0014 24        		.uleb128 0x24
+ 1891 0015 00        		.byte	0
+ 1892 0016 0B        		.uleb128 0xb
+ 1893 0017 0B        		.uleb128 0xb
+ 1894 0018 3E        		.uleb128 0x3e
+ 1895 0019 0B        		.uleb128 0xb
+ 1896 001a 03        		.uleb128 0x3
+ 1897 001b 0E        		.uleb128 0xe
+ 1898 001c 00        		.byte	0
+ 1899 001d 00        		.byte	0
+ 1900 001e 03        		.uleb128 0x3
+ 1901 001f 24        		.uleb128 0x24
+ 1902 0020 00        		.byte	0
+ 1903 0021 0B        		.uleb128 0xb
+ 1904 0022 0B        		.uleb128 0xb
+ 1905 0023 3E        		.uleb128 0x3e
+ 1906 0024 0B        		.uleb128 0xb
+ 1907 0025 03        		.uleb128 0x3
+ 1908 0026 08        		.uleb128 0x8
+ 1909 0027 00        		.byte	0
+ 1910 0028 00        		.byte	0
+ 1911 0029 04        		.uleb128 0x4
+ 1912 002a 16        		.uleb128 0x16
+ 1913 002b 00        		.byte	0
+ 1914 002c 03        		.uleb128 0x3
+ 1915 002d 0E        		.uleb128 0xe
+ 1916 002e 3A        		.uleb128 0x3a
+ 1917 002f 0B        		.uleb128 0xb
+ 1918 0030 3B        		.uleb128 0x3b
+ 1919 0031 0B        		.uleb128 0xb
+ 1920 0032 49        		.uleb128 0x49
+ 1921 0033 13        		.uleb128 0x13
+ 1922 0034 00        		.byte	0
+ 1923 0035 00        		.byte	0
+ 1924 0036 05        		.uleb128 0x5
+ 1925 0037 04        		.uleb128 0x4
+ 1926 0038 01        		.byte	0x1
+ 1927 0039 0B        		.uleb128 0xb
+ 1928 003a 0B        		.uleb128 0xb
+ 1929 003b 49        		.uleb128 0x49
+ 1930 003c 13        		.uleb128 0x13
+ 1931 003d 3A        		.uleb128 0x3a
+ 1932 003e 0B        		.uleb128 0xb
+ 1933 003f 3B        		.uleb128 0x3b
+ 1934 0040 0B        		.uleb128 0xb
+ 1935 0041 01        		.uleb128 0x1
+ 1936 0042 13        		.uleb128 0x13
+ 1937 0043 00        		.byte	0
+ 1938 0044 00        		.byte	0
+ 1939 0045 06        		.uleb128 0x6
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 51
+
+
+ 1940 0046 28        		.uleb128 0x28
+ 1941 0047 00        		.byte	0
+ 1942 0048 03        		.uleb128 0x3
+ 1943 0049 0E        		.uleb128 0xe
+ 1944 004a 1C        		.uleb128 0x1c
+ 1945 004b 0B        		.uleb128 0xb
+ 1946 004c 00        		.byte	0
+ 1947 004d 00        		.byte	0
+ 1948 004e 07        		.uleb128 0x7
+ 1949 004f 13        		.uleb128 0x13
+ 1950 0050 01        		.byte	0x1
+ 1951 0051 0B        		.uleb128 0xb
+ 1952 0052 0B        		.uleb128 0xb
+ 1953 0053 3A        		.uleb128 0x3a
+ 1954 0054 0B        		.uleb128 0xb
+ 1955 0055 3B        		.uleb128 0x3b
+ 1956 0056 0B        		.uleb128 0xb
+ 1957 0057 01        		.uleb128 0x1
+ 1958 0058 13        		.uleb128 0x13
+ 1959 0059 00        		.byte	0
+ 1960 005a 00        		.byte	0
+ 1961 005b 08        		.uleb128 0x8
+ 1962 005c 0D        		.uleb128 0xd
+ 1963 005d 00        		.byte	0
+ 1964 005e 03        		.uleb128 0x3
+ 1965 005f 0E        		.uleb128 0xe
+ 1966 0060 3A        		.uleb128 0x3a
+ 1967 0061 0B        		.uleb128 0xb
+ 1968 0062 3B        		.uleb128 0x3b
+ 1969 0063 0B        		.uleb128 0xb
+ 1970 0064 49        		.uleb128 0x49
+ 1971 0065 13        		.uleb128 0x13
+ 1972 0066 38        		.uleb128 0x38
+ 1973 0067 0A        		.uleb128 0xa
+ 1974 0068 00        		.byte	0
+ 1975 0069 00        		.byte	0
+ 1976 006a 09        		.uleb128 0x9
+ 1977 006b 2E        		.uleb128 0x2e
+ 1978 006c 00        		.byte	0
+ 1979 006d 3F        		.uleb128 0x3f
+ 1980 006e 0C        		.uleb128 0xc
+ 1981 006f 03        		.uleb128 0x3
+ 1982 0070 0E        		.uleb128 0xe
+ 1983 0071 3A        		.uleb128 0x3a
+ 1984 0072 0B        		.uleb128 0xb
+ 1985 0073 3B        		.uleb128 0x3b
+ 1986 0074 0B        		.uleb128 0xb
+ 1987 0075 27        		.uleb128 0x27
+ 1988 0076 0C        		.uleb128 0xc
+ 1989 0077 11        		.uleb128 0x11
+ 1990 0078 01        		.uleb128 0x1
+ 1991 0079 12        		.uleb128 0x12
+ 1992 007a 01        		.uleb128 0x1
+ 1993 007b 40        		.uleb128 0x40
+ 1994 007c 0A        		.uleb128 0xa
+ 1995 007d 9742      		.uleb128 0x2117
+ 1996 007f 0C        		.uleb128 0xc
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 52
+
+
+ 1997 0080 00        		.byte	0
+ 1998 0081 00        		.byte	0
+ 1999 0082 0A        		.uleb128 0xa
+ 2000 0083 2E        		.uleb128 0x2e
+ 2001 0084 01        		.byte	0x1
+ 2002 0085 3F        		.uleb128 0x3f
+ 2003 0086 0C        		.uleb128 0xc
+ 2004 0087 03        		.uleb128 0x3
+ 2005 0088 0E        		.uleb128 0xe
+ 2006 0089 3A        		.uleb128 0x3a
+ 2007 008a 0B        		.uleb128 0xb
+ 2008 008b 3B        		.uleb128 0x3b
+ 2009 008c 05        		.uleb128 0x5
+ 2010 008d 27        		.uleb128 0x27
+ 2011 008e 0C        		.uleb128 0xc
+ 2012 008f 11        		.uleb128 0x11
+ 2013 0090 01        		.uleb128 0x1
+ 2014 0091 12        		.uleb128 0x12
+ 2015 0092 01        		.uleb128 0x1
+ 2016 0093 40        		.uleb128 0x40
+ 2017 0094 0A        		.uleb128 0xa
+ 2018 0095 9742      		.uleb128 0x2117
+ 2019 0097 0C        		.uleb128 0xc
+ 2020 0098 01        		.uleb128 0x1
+ 2021 0099 13        		.uleb128 0x13
+ 2022 009a 00        		.byte	0
+ 2023 009b 00        		.byte	0
+ 2024 009c 0B        		.uleb128 0xb
+ 2025 009d 8982 01   		.uleb128 0x4109
+ 2026 00a0 00        		.byte	0
+ 2027 00a1 11        		.uleb128 0x11
+ 2028 00a2 01        		.uleb128 0x1
+ 2029 00a3 31        		.uleb128 0x31
+ 2030 00a4 13        		.uleb128 0x13
+ 2031 00a5 00        		.byte	0
+ 2032 00a6 00        		.byte	0
+ 2033 00a7 0C        		.uleb128 0xc
+ 2034 00a8 34        		.uleb128 0x34
+ 2035 00a9 00        		.byte	0
+ 2036 00aa 03        		.uleb128 0x3
+ 2037 00ab 0E        		.uleb128 0xe
+ 2038 00ac 3A        		.uleb128 0x3a
+ 2039 00ad 0B        		.uleb128 0xb
+ 2040 00ae 3B        		.uleb128 0x3b
+ 2041 00af 05        		.uleb128 0x5
+ 2042 00b0 49        		.uleb128 0x49
+ 2043 00b1 13        		.uleb128 0x13
+ 2044 00b2 02        		.uleb128 0x2
+ 2045 00b3 06        		.uleb128 0x6
+ 2046 00b4 00        		.byte	0
+ 2047 00b5 00        		.byte	0
+ 2048 00b6 0D        		.uleb128 0xd
+ 2049 00b7 2E        		.uleb128 0x2e
+ 2050 00b8 01        		.byte	0x1
+ 2051 00b9 03        		.uleb128 0x3
+ 2052 00ba 0E        		.uleb128 0xe
+ 2053 00bb 3A        		.uleb128 0x3a
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 53
+
+
+ 2054 00bc 0B        		.uleb128 0xb
+ 2055 00bd 3B        		.uleb128 0x3b
+ 2056 00be 05        		.uleb128 0x5
+ 2057 00bf 27        		.uleb128 0x27
+ 2058 00c0 0C        		.uleb128 0xc
+ 2059 00c1 20        		.uleb128 0x20
+ 2060 00c2 0B        		.uleb128 0xb
+ 2061 00c3 01        		.uleb128 0x1
+ 2062 00c4 13        		.uleb128 0x13
+ 2063 00c5 00        		.byte	0
+ 2064 00c6 00        		.byte	0
+ 2065 00c7 0E        		.uleb128 0xe
+ 2066 00c8 34        		.uleb128 0x34
+ 2067 00c9 00        		.byte	0
+ 2068 00ca 03        		.uleb128 0x3
+ 2069 00cb 0E        		.uleb128 0xe
+ 2070 00cc 3A        		.uleb128 0x3a
+ 2071 00cd 0B        		.uleb128 0xb
+ 2072 00ce 3B        		.uleb128 0x3b
+ 2073 00cf 05        		.uleb128 0x5
+ 2074 00d0 49        		.uleb128 0x49
+ 2075 00d1 13        		.uleb128 0x13
+ 2076 00d2 00        		.byte	0
+ 2077 00d3 00        		.byte	0
+ 2078 00d4 0F        		.uleb128 0xf
+ 2079 00d5 34        		.uleb128 0x34
+ 2080 00d6 00        		.byte	0
+ 2081 00d7 03        		.uleb128 0x3
+ 2082 00d8 08        		.uleb128 0x8
+ 2083 00d9 3A        		.uleb128 0x3a
+ 2084 00da 0B        		.uleb128 0xb
+ 2085 00db 3B        		.uleb128 0x3b
+ 2086 00dc 05        		.uleb128 0x5
+ 2087 00dd 49        		.uleb128 0x49
+ 2088 00de 13        		.uleb128 0x13
+ 2089 00df 00        		.byte	0
+ 2090 00e0 00        		.byte	0
+ 2091 00e1 10        		.uleb128 0x10
+ 2092 00e2 0F        		.uleb128 0xf
+ 2093 00e3 00        		.byte	0
+ 2094 00e4 0B        		.uleb128 0xb
+ 2095 00e5 0B        		.uleb128 0xb
+ 2096 00e6 49        		.uleb128 0x49
+ 2097 00e7 13        		.uleb128 0x13
+ 2098 00e8 00        		.byte	0
+ 2099 00e9 00        		.byte	0
+ 2100 00ea 11        		.uleb128 0x11
+ 2101 00eb 2E        		.uleb128 0x2e
+ 2102 00ec 01        		.byte	0x1
+ 2103 00ed 3F        		.uleb128 0x3f
+ 2104 00ee 0C        		.uleb128 0xc
+ 2105 00ef 03        		.uleb128 0x3
+ 2106 00f0 0E        		.uleb128 0xe
+ 2107 00f1 3A        		.uleb128 0x3a
+ 2108 00f2 0B        		.uleb128 0xb
+ 2109 00f3 3B        		.uleb128 0x3b
+ 2110 00f4 05        		.uleb128 0x5
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 54
+
+
+ 2111 00f5 27        		.uleb128 0x27
+ 2112 00f6 0C        		.uleb128 0xc
+ 2113 00f7 11        		.uleb128 0x11
+ 2114 00f8 01        		.uleb128 0x1
+ 2115 00f9 12        		.uleb128 0x12
+ 2116 00fa 01        		.uleb128 0x1
+ 2117 00fb 40        		.uleb128 0x40
+ 2118 00fc 06        		.uleb128 0x6
+ 2119 00fd 9742      		.uleb128 0x2117
+ 2120 00ff 0C        		.uleb128 0xc
+ 2121 0100 01        		.uleb128 0x1
+ 2122 0101 13        		.uleb128 0x13
+ 2123 0102 00        		.byte	0
+ 2124 0103 00        		.byte	0
+ 2125 0104 12        		.uleb128 0x12
+ 2126 0105 34        		.uleb128 0x34
+ 2127 0106 00        		.byte	0
+ 2128 0107 03        		.uleb128 0x3
+ 2129 0108 08        		.uleb128 0x8
+ 2130 0109 3A        		.uleb128 0x3a
+ 2131 010a 0B        		.uleb128 0xb
+ 2132 010b 3B        		.uleb128 0x3b
+ 2133 010c 05        		.uleb128 0x5
+ 2134 010d 49        		.uleb128 0x49
+ 2135 010e 13        		.uleb128 0x13
+ 2136 010f 02        		.uleb128 0x2
+ 2137 0110 06        		.uleb128 0x6
+ 2138 0111 00        		.byte	0
+ 2139 0112 00        		.byte	0
+ 2140 0113 13        		.uleb128 0x13
+ 2141 0114 34        		.uleb128 0x34
+ 2142 0115 00        		.byte	0
+ 2143 0116 03        		.uleb128 0x3
+ 2144 0117 0E        		.uleb128 0xe
+ 2145 0118 3A        		.uleb128 0x3a
+ 2146 0119 0B        		.uleb128 0xb
+ 2147 011a 3B        		.uleb128 0x3b
+ 2148 011b 05        		.uleb128 0x5
+ 2149 011c 49        		.uleb128 0x49
+ 2150 011d 13        		.uleb128 0x13
+ 2151 011e 02        		.uleb128 0x2
+ 2152 011f 0A        		.uleb128 0xa
+ 2153 0120 00        		.byte	0
+ 2154 0121 00        		.byte	0
+ 2155 0122 14        		.uleb128 0x14
+ 2156 0123 1D        		.uleb128 0x1d
+ 2157 0124 01        		.byte	0x1
+ 2158 0125 31        		.uleb128 0x31
+ 2159 0126 13        		.uleb128 0x13
+ 2160 0127 52        		.uleb128 0x52
+ 2161 0128 01        		.uleb128 0x1
+ 2162 0129 55        		.uleb128 0x55
+ 2163 012a 06        		.uleb128 0x6
+ 2164 012b 58        		.uleb128 0x58
+ 2165 012c 0B        		.uleb128 0xb
+ 2166 012d 59        		.uleb128 0x59
+ 2167 012e 05        		.uleb128 0x5
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 55
+
+
+ 2168 012f 01        		.uleb128 0x1
+ 2169 0130 13        		.uleb128 0x13
+ 2170 0131 00        		.byte	0
+ 2171 0132 00        		.byte	0
+ 2172 0133 15        		.uleb128 0x15
+ 2173 0134 0B        		.uleb128 0xb
+ 2174 0135 01        		.byte	0x1
+ 2175 0136 55        		.uleb128 0x55
+ 2176 0137 06        		.uleb128 0x6
+ 2177 0138 00        		.byte	0
+ 2178 0139 00        		.byte	0
+ 2179 013a 16        		.uleb128 0x16
+ 2180 013b 34        		.uleb128 0x34
+ 2181 013c 00        		.byte	0
+ 2182 013d 31        		.uleb128 0x31
+ 2183 013e 13        		.uleb128 0x13
+ 2184 013f 02        		.uleb128 0x2
+ 2185 0140 06        		.uleb128 0x6
+ 2186 0141 00        		.byte	0
+ 2187 0142 00        		.byte	0
+ 2188 0143 17        		.uleb128 0x17
+ 2189 0144 8982 01   		.uleb128 0x4109
+ 2190 0147 01        		.byte	0x1
+ 2191 0148 11        		.uleb128 0x11
+ 2192 0149 01        		.uleb128 0x1
+ 2193 014a 31        		.uleb128 0x31
+ 2194 014b 13        		.uleb128 0x13
+ 2195 014c 01        		.uleb128 0x1
+ 2196 014d 13        		.uleb128 0x13
+ 2197 014e 00        		.byte	0
+ 2198 014f 00        		.byte	0
+ 2199 0150 18        		.uleb128 0x18
+ 2200 0151 8A82 01   		.uleb128 0x410a
+ 2201 0154 00        		.byte	0
+ 2202 0155 02        		.uleb128 0x2
+ 2203 0156 0A        		.uleb128 0xa
+ 2204 0157 9142      		.uleb128 0x2111
+ 2205 0159 0A        		.uleb128 0xa
+ 2206 015a 00        		.byte	0
+ 2207 015b 00        		.byte	0
+ 2208 015c 19        		.uleb128 0x19
+ 2209 015d 8982 01   		.uleb128 0x4109
+ 2210 0160 01        		.byte	0x1
+ 2211 0161 11        		.uleb128 0x11
+ 2212 0162 01        		.uleb128 0x1
+ 2213 0163 31        		.uleb128 0x31
+ 2214 0164 13        		.uleb128 0x13
+ 2215 0165 00        		.byte	0
+ 2216 0166 00        		.byte	0
+ 2217 0167 1A        		.uleb128 0x1a
+ 2218 0168 35        		.uleb128 0x35
+ 2219 0169 00        		.byte	0
+ 2220 016a 49        		.uleb128 0x49
+ 2221 016b 13        		.uleb128 0x13
+ 2222 016c 00        		.byte	0
+ 2223 016d 00        		.byte	0
+ 2224 016e 1B        		.uleb128 0x1b
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 56
+
+
+ 2225 016f 2E        		.uleb128 0x2e
+ 2226 0170 01        		.byte	0x1
+ 2227 0171 3F        		.uleb128 0x3f
+ 2228 0172 0C        		.uleb128 0xc
+ 2229 0173 03        		.uleb128 0x3
+ 2230 0174 0E        		.uleb128 0xe
+ 2231 0175 3A        		.uleb128 0x3a
+ 2232 0176 0B        		.uleb128 0xb
+ 2233 0177 3B        		.uleb128 0x3b
+ 2234 0178 0B        		.uleb128 0xb
+ 2235 0179 27        		.uleb128 0x27
+ 2236 017a 0C        		.uleb128 0xc
+ 2237 017b 11        		.uleb128 0x11
+ 2238 017c 01        		.uleb128 0x1
+ 2239 017d 12        		.uleb128 0x12
+ 2240 017e 01        		.uleb128 0x1
+ 2241 017f 40        		.uleb128 0x40
+ 2242 0180 0A        		.uleb128 0xa
+ 2243 0181 9742      		.uleb128 0x2117
+ 2244 0183 0C        		.uleb128 0xc
+ 2245 0184 01        		.uleb128 0x1
+ 2246 0185 13        		.uleb128 0x13
+ 2247 0186 00        		.byte	0
+ 2248 0187 00        		.byte	0
+ 2249 0188 1C        		.uleb128 0x1c
+ 2250 0189 05        		.uleb128 0x5
+ 2251 018a 00        		.byte	0
+ 2252 018b 03        		.uleb128 0x3
+ 2253 018c 0E        		.uleb128 0xe
+ 2254 018d 3A        		.uleb128 0x3a
+ 2255 018e 0B        		.uleb128 0xb
+ 2256 018f 3B        		.uleb128 0x3b
+ 2257 0190 0B        		.uleb128 0xb
+ 2258 0191 49        		.uleb128 0x49
+ 2259 0192 13        		.uleb128 0x13
+ 2260 0193 02        		.uleb128 0x2
+ 2261 0194 06        		.uleb128 0x6
+ 2262 0195 00        		.byte	0
+ 2263 0196 00        		.byte	0
+ 2264 0197 1D        		.uleb128 0x1d
+ 2265 0198 01        		.uleb128 0x1
+ 2266 0199 01        		.byte	0x1
+ 2267 019a 49        		.uleb128 0x49
+ 2268 019b 13        		.uleb128 0x13
+ 2269 019c 01        		.uleb128 0x1
+ 2270 019d 13        		.uleb128 0x13
+ 2271 019e 00        		.byte	0
+ 2272 019f 00        		.byte	0
+ 2273 01a0 1E        		.uleb128 0x1e
+ 2274 01a1 21        		.uleb128 0x21
+ 2275 01a2 00        		.byte	0
+ 2276 01a3 49        		.uleb128 0x49
+ 2277 01a4 13        		.uleb128 0x13
+ 2278 01a5 2F        		.uleb128 0x2f
+ 2279 01a6 0B        		.uleb128 0xb
+ 2280 01a7 00        		.byte	0
+ 2281 01a8 00        		.byte	0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 57
+
+
+ 2282 01a9 1F        		.uleb128 0x1f
+ 2283 01aa 34        		.uleb128 0x34
+ 2284 01ab 00        		.byte	0
+ 2285 01ac 03        		.uleb128 0x3
+ 2286 01ad 0E        		.uleb128 0xe
+ 2287 01ae 3A        		.uleb128 0x3a
+ 2288 01af 0B        		.uleb128 0xb
+ 2289 01b0 3B        		.uleb128 0x3b
+ 2290 01b1 0B        		.uleb128 0xb
+ 2291 01b2 49        		.uleb128 0x49
+ 2292 01b3 13        		.uleb128 0x13
+ 2293 01b4 02        		.uleb128 0x2
+ 2294 01b5 0A        		.uleb128 0xa
+ 2295 01b6 00        		.byte	0
+ 2296 01b7 00        		.byte	0
+ 2297 01b8 20        		.uleb128 0x20
+ 2298 01b9 26        		.uleb128 0x26
+ 2299 01ba 00        		.byte	0
+ 2300 01bb 49        		.uleb128 0x49
+ 2301 01bc 13        		.uleb128 0x13
+ 2302 01bd 00        		.byte	0
+ 2303 01be 00        		.byte	0
+ 2304 01bf 21        		.uleb128 0x21
+ 2305 01c0 34        		.uleb128 0x34
+ 2306 01c1 00        		.byte	0
+ 2307 01c2 03        		.uleb128 0x3
+ 2308 01c3 0E        		.uleb128 0xe
+ 2309 01c4 3A        		.uleb128 0x3a
+ 2310 01c5 0B        		.uleb128 0xb
+ 2311 01c6 3B        		.uleb128 0x3b
+ 2312 01c7 0B        		.uleb128 0xb
+ 2313 01c8 49        		.uleb128 0x49
+ 2314 01c9 13        		.uleb128 0x13
+ 2315 01ca 00        		.byte	0
+ 2316 01cb 00        		.byte	0
+ 2317 01cc 22        		.uleb128 0x22
+ 2318 01cd 34        		.uleb128 0x34
+ 2319 01ce 00        		.byte	0
+ 2320 01cf 03        		.uleb128 0x3
+ 2321 01d0 0E        		.uleb128 0xe
+ 2322 01d1 3A        		.uleb128 0x3a
+ 2323 01d2 0B        		.uleb128 0xb
+ 2324 01d3 3B        		.uleb128 0x3b
+ 2325 01d4 0B        		.uleb128 0xb
+ 2326 01d5 49        		.uleb128 0x49
+ 2327 01d6 13        		.uleb128 0x13
+ 2328 01d7 3F        		.uleb128 0x3f
+ 2329 01d8 0C        		.uleb128 0xc
+ 2330 01d9 3C        		.uleb128 0x3c
+ 2331 01da 0C        		.uleb128 0xc
+ 2332 01db 00        		.byte	0
+ 2333 01dc 00        		.byte	0
+ 2334 01dd 23        		.uleb128 0x23
+ 2335 01de 21        		.uleb128 0x21
+ 2336 01df 00        		.byte	0
+ 2337 01e0 00        		.byte	0
+ 2338 01e1 00        		.byte	0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 58
+
+
+ 2339 01e2 24        		.uleb128 0x24
+ 2340 01e3 2E        		.uleb128 0x2e
+ 2341 01e4 00        		.byte	0
+ 2342 01e5 3F        		.uleb128 0x3f
+ 2343 01e6 0C        		.uleb128 0xc
+ 2344 01e7 3C        		.uleb128 0x3c
+ 2345 01e8 0C        		.uleb128 0xc
+ 2346 01e9 8740      		.uleb128 0x2007
+ 2347 01eb 0E        		.uleb128 0xe
+ 2348 01ec 03        		.uleb128 0x3
+ 2349 01ed 0E        		.uleb128 0xe
+ 2350 01ee 3A        		.uleb128 0x3a
+ 2351 01ef 0B        		.uleb128 0xb
+ 2352 01f0 3B        		.uleb128 0x3b
+ 2353 01f1 0B        		.uleb128 0xb
+ 2354 01f2 00        		.byte	0
+ 2355 01f3 00        		.byte	0
+ 2356 01f4 00        		.byte	0
+ 2357               		.section	.debug_loc,"",@progbits
+ 2358               	.Ldebug_loc0:
+ 2359               	.LLST0:
+ 2360 0000 4C00 0000 		.long	.LVL1-.Ltext0
+ 2361 0004 9000 0000 		.long	.LVL3-.Ltext0
+ 2362 0008 0100      		.word	0x1
+ 2363 000a 68        		.byte	0x68
+ 2364 000b 0000 0000 		.long	0
+ 2365 000f 0000 0000 		.long	0
+ 2366               	.LLST1:
+ 2367 0013 A800 0000 		.long	.LFB8-.Ltext0
+ 2368 0017 AA00 0000 		.long	.LCFI0-.Ltext0
+ 2369 001b 0300      		.word	0x3
+ 2370 001d 92        		.byte	0x92
+ 2371 001e 20        		.uleb128 0x20
+ 2372 001f 02        		.sleb128 2
+ 2373 0020 AA00 0000 		.long	.LCFI0-.Ltext0
+ 2374 0024 AC00 0000 		.long	.LCFI1-.Ltext0
+ 2375 0028 0300      		.word	0x3
+ 2376 002a 92        		.byte	0x92
+ 2377 002b 20        		.uleb128 0x20
+ 2378 002c 03        		.sleb128 3
+ 2379 002d AC00 0000 		.long	.LCFI1-.Ltext0
+ 2380 0031 AE00 0000 		.long	.LCFI2-.Ltext0
+ 2381 0035 0300      		.word	0x3
+ 2382 0037 92        		.byte	0x92
+ 2383 0038 20        		.uleb128 0x20
+ 2384 0039 04        		.sleb128 4
+ 2385 003a AE00 0000 		.long	.LCFI2-.Ltext0
+ 2386 003e B000 0000 		.long	.LCFI3-.Ltext0
+ 2387 0042 0300      		.word	0x3
+ 2388 0044 92        		.byte	0x92
+ 2389 0045 20        		.uleb128 0x20
+ 2390 0046 05        		.sleb128 5
+ 2391 0047 B000 0000 		.long	.LCFI3-.Ltext0
+ 2392 004b B200 0000 		.long	.LCFI4-.Ltext0
+ 2393 004f 0300      		.word	0x3
+ 2394 0051 92        		.byte	0x92
+ 2395 0052 20        		.uleb128 0x20
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 59
+
+
+ 2396 0053 06        		.sleb128 6
+ 2397 0054 B200 0000 		.long	.LCFI4-.Ltext0
+ 2398 0058 B400 0000 		.long	.LCFI5-.Ltext0
+ 2399 005c 0300      		.word	0x3
+ 2400 005e 92        		.byte	0x92
+ 2401 005f 20        		.uleb128 0x20
+ 2402 0060 07        		.sleb128 7
+ 2403 0061 B400 0000 		.long	.LCFI5-.Ltext0
+ 2404 0065 B600 0000 		.long	.LCFI6-.Ltext0
+ 2405 0069 0300      		.word	0x3
+ 2406 006b 92        		.byte	0x92
+ 2407 006c 20        		.uleb128 0x20
+ 2408 006d 08        		.sleb128 8
+ 2409 006e B600 0000 		.long	.LCFI6-.Ltext0
+ 2410 0072 B800 0000 		.long	.LCFI7-.Ltext0
+ 2411 0076 0300      		.word	0x3
+ 2412 0078 92        		.byte	0x92
+ 2413 0079 20        		.uleb128 0x20
+ 2414 007a 09        		.sleb128 9
+ 2415 007b B800 0000 		.long	.LCFI7-.Ltext0
+ 2416 007f BA00 0000 		.long	.LCFI8-.Ltext0
+ 2417 0083 0300      		.word	0x3
+ 2418 0085 92        		.byte	0x92
+ 2419 0086 20        		.uleb128 0x20
+ 2420 0087 0A        		.sleb128 10
+ 2421 0088 BA00 0000 		.long	.LCFI8-.Ltext0
+ 2422 008c BC00 0000 		.long	.LCFI9-.Ltext0
+ 2423 0090 0300      		.word	0x3
+ 2424 0092 92        		.byte	0x92
+ 2425 0093 20        		.uleb128 0x20
+ 2426 0094 0B        		.sleb128 11
+ 2427 0095 BC00 0000 		.long	.LCFI9-.Ltext0
+ 2428 0099 BE00 0000 		.long	.LCFI10-.Ltext0
+ 2429 009d 0300      		.word	0x3
+ 2430 009f 92        		.byte	0x92
+ 2431 00a0 20        		.uleb128 0x20
+ 2432 00a1 0C        		.sleb128 12
+ 2433 00a2 BE00 0000 		.long	.LCFI10-.Ltext0
+ 2434 00a6 C200 0000 		.long	.LCFI11-.Ltext0
+ 2435 00aa 0300      		.word	0x3
+ 2436 00ac 92        		.byte	0x92
+ 2437 00ad 20        		.uleb128 0x20
+ 2438 00ae 0D        		.sleb128 13
+ 2439 00af C200 0000 		.long	.LCFI11-.Ltext0
+ 2440 00b3 0403 0000 		.long	.LFE8-.Ltext0
+ 2441 00b7 0200      		.word	0x2
+ 2442 00b9 8C        		.byte	0x8c
+ 2443 00ba 0D        		.sleb128 13
+ 2444 00bb 0000 0000 		.long	0
+ 2445 00bf 0000 0000 		.long	0
+ 2446               	.LLST2:
+ 2447 00c3 D600 0000 		.long	.LVL8-.Ltext0
+ 2448 00c7 F200 0000 		.long	.LVL9-.Ltext0
+ 2449 00cb 0200      		.word	0x2
+ 2450 00cd 30        		.byte	0x30
+ 2451 00ce 9F        		.byte	0x9f
+ 2452 00cf 0000 0000 		.long	0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 60
+
+
+ 2453 00d3 0000 0000 		.long	0
+ 2454               	.LLST3:
+ 2455 00d7 7602 0000 		.long	.LVL37-.Ltext0
+ 2456 00db AC02 0000 		.long	.LVL39-.Ltext0
+ 2457 00df 0600      		.word	0x6
+ 2458 00e1 6E        		.byte	0x6e
+ 2459 00e2 93        		.byte	0x93
+ 2460 00e3 01        		.uleb128 0x1
+ 2461 00e4 6F        		.byte	0x6f
+ 2462 00e5 93        		.byte	0x93
+ 2463 00e6 01        		.uleb128 0x1
+ 2464 00e7 0000 0000 		.long	0
+ 2465 00eb 0000 0000 		.long	0
+ 2466               	.LLST4:
+ 2467 00ef B401 0000 		.long	.LVL18-.Ltext0
+ 2468 00f3 0C02 0000 		.long	.LVL25-.Ltext0
+ 2469 00f7 0100      		.word	0x1
+ 2470 00f9 68        		.byte	0x68
+ 2471 00fa 0C02 0000 		.long	.LVL25-.Ltext0
+ 2472 00fe 1E02 0000 		.long	.LVL27-.Ltext0
+ 2473 0102 0200      		.word	0x2
+ 2474 0104 8A        		.byte	0x8a
+ 2475 0105 00        		.sleb128 0
+ 2476 0106 1E02 0000 		.long	.LVL27-.Ltext0
+ 2477 010a 5E02 0000 		.long	.LVL34-.Ltext0
+ 2478 010e 0100      		.word	0x1
+ 2479 0110 68        		.byte	0x68
+ 2480 0111 5E02 0000 		.long	.LVL34-.Ltext0
+ 2481 0115 6002 0000 		.long	.LVL35-.Ltext0
+ 2482 0119 0200      		.word	0x2
+ 2483 011b 8A        		.byte	0x8a
+ 2484 011c 00        		.sleb128 0
+ 2485 011d 6002 0000 		.long	.LVL35-.Ltext0
+ 2486 0121 6A02 0000 		.long	.LVL36-.Ltext0
+ 2487 0125 0200      		.word	0x2
+ 2488 0127 8A        		.byte	0x8a
+ 2489 0128 7E        		.sleb128 -2
+ 2490 0129 D202 0000 		.long	.LVL41-.Ltext0
+ 2491 012d EC02 0000 		.long	.LVL43-.Ltext0
+ 2492 0131 0100      		.word	0x1
+ 2493 0133 68        		.byte	0x68
+ 2494 0134 0000 0000 		.long	0
+ 2495 0138 0000 0000 		.long	0
+ 2496               	.LLST5:
+ 2497 013c B201 0000 		.long	.LVL17-.Ltext0
+ 2498 0140 B601 0000 		.long	.LVL19-.Ltext0
+ 2499 0144 0300      		.word	0x3
+ 2500 0146 8A        		.byte	0x8a
+ 2501 0147 01        		.sleb128 1
+ 2502 0148 9F        		.byte	0x9f
+ 2503 0149 B601 0000 		.long	.LVL19-.Ltext0
+ 2504 014d 6002 0000 		.long	.LVL35-.Ltext0
+ 2505 0151 0300      		.word	0x3
+ 2506 0153 8A        		.byte	0x8a
+ 2507 0154 02        		.sleb128 2
+ 2508 0155 9F        		.byte	0x9f
+ 2509 0156 6002 0000 		.long	.LVL35-.Ltext0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 61
+
+
+ 2510 015a 6A02 0000 		.long	.LVL36-.Ltext0
+ 2511 015e 0600      		.word	0x6
+ 2512 0160 6A        		.byte	0x6a
+ 2513 0161 93        		.byte	0x93
+ 2514 0162 01        		.uleb128 0x1
+ 2515 0163 6B        		.byte	0x6b
+ 2516 0164 93        		.byte	0x93
+ 2517 0165 01        		.uleb128 0x1
+ 2518 0166 D202 0000 		.long	.LVL41-.Ltext0
+ 2519 016a EC02 0000 		.long	.LVL43-.Ltext0
+ 2520 016e 0300      		.word	0x3
+ 2521 0170 8A        		.byte	0x8a
+ 2522 0171 02        		.sleb128 2
+ 2523 0172 9F        		.byte	0x9f
+ 2524 0173 0000 0000 		.long	0
+ 2525 0177 0000 0000 		.long	0
+ 2526               	.LLST6:
+ 2527 017b CE01 0000 		.long	.LVL22-.Ltext0
+ 2528 017f 2A02 0000 		.long	.LVL29-.Ltext0
+ 2529 0183 0600      		.word	0x6
+ 2530 0185 6E        		.byte	0x6e
+ 2531 0186 93        		.byte	0x93
+ 2532 0187 01        		.uleb128 0x1
+ 2533 0188 6F        		.byte	0x6f
+ 2534 0189 93        		.byte	0x93
+ 2535 018a 01        		.uleb128 0x1
+ 2536 018b 3602 0000 		.long	.LVL30-.Ltext0
+ 2537 018f 4802 0000 		.long	.LVL32-.Ltext0
+ 2538 0193 0600      		.word	0x6
+ 2539 0195 6E        		.byte	0x6e
+ 2540 0196 93        		.byte	0x93
+ 2541 0197 01        		.uleb128 0x1
+ 2542 0198 6F        		.byte	0x6f
+ 2543 0199 93        		.byte	0x93
+ 2544 019a 01        		.uleb128 0x1
+ 2545 019b D202 0000 		.long	.LVL41-.Ltext0
+ 2546 019f EC02 0000 		.long	.LVL43-.Ltext0
+ 2547 01a3 0600      		.word	0x6
+ 2548 01a5 6E        		.byte	0x6e
+ 2549 01a6 93        		.byte	0x93
+ 2550 01a7 01        		.uleb128 0x1
+ 2551 01a8 6F        		.byte	0x6f
+ 2552 01a9 93        		.byte	0x93
+ 2553 01aa 01        		.uleb128 0x1
+ 2554 01ab 0000 0000 		.long	0
+ 2555 01af 0000 0000 		.long	0
+ 2556               	.LLST7:
+ 2557 01b3 B201 0000 		.long	.LVL17-.Ltext0
+ 2558 01b7 6A02 0000 		.long	.LVL36-.Ltext0
+ 2559 01bb 0100      		.word	0x1
+ 2560 01bd 64        		.byte	0x64
+ 2561 01be D202 0000 		.long	.LVL41-.Ltext0
+ 2562 01c2 EC02 0000 		.long	.LVL43-.Ltext0
+ 2563 01c6 0100      		.word	0x1
+ 2564 01c8 64        		.byte	0x64
+ 2565 01c9 0000 0000 		.long	0
+ 2566 01cd 0000 0000 		.long	0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 62
+
+
+ 2567               	.LLST8:
+ 2568 01d1 B201 0000 		.long	.LVL17-.Ltext0
+ 2569 01d5 6A02 0000 		.long	.LVL36-.Ltext0
+ 2570 01d9 0100      		.word	0x1
+ 2571 01db 63        		.byte	0x63
+ 2572 01dc D202 0000 		.long	.LVL41-.Ltext0
+ 2573 01e0 EC02 0000 		.long	.LVL43-.Ltext0
+ 2574 01e4 0100      		.word	0x1
+ 2575 01e6 63        		.byte	0x63
+ 2576 01e7 0000 0000 		.long	0
+ 2577 01eb 0000 0000 		.long	0
+ 2578               	.LLST9:
+ 2579 01ef E601 0000 		.long	.LVL23-.Ltext0
+ 2580 01f3 1E02 0000 		.long	.LVL27-.Ltext0
+ 2581 01f7 0100      		.word	0x1
+ 2582 01f9 69        		.byte	0x69
+ 2583 01fa D202 0000 		.long	.LVL41-.Ltext0
+ 2584 01fe E202 0000 		.long	.LVL42-.Ltext0
+ 2585 0202 0100      		.word	0x1
+ 2586 0204 69        		.byte	0x69
+ 2587 0205 0000 0000 		.long	0
+ 2588 0209 0000 0000 		.long	0
+ 2589               	.LLST10:
+ 2590 020d E801 0000 		.long	.LVL24-.Ltext0
+ 2591 0211 1E02 0000 		.long	.LVL27-.Ltext0
+ 2592 0215 0100      		.word	0x1
+ 2593 0217 5D        		.byte	0x5d
+ 2594 0218 D202 0000 		.long	.LVL41-.Ltext0
+ 2595 021c E202 0000 		.long	.LVL42-.Ltext0
+ 2596 0220 0100      		.word	0x1
+ 2597 0222 5D        		.byte	0x5d
+ 2598 0223 0000 0000 		.long	0
+ 2599 0227 0000 0000 		.long	0
+ 2600               	.LLST11:
+ 2601 022b B201 0000 		.long	.LVL17-.Ltext0
+ 2602 022f 6A02 0000 		.long	.LVL36-.Ltext0
+ 2603 0233 0100      		.word	0x1
+ 2604 0235 62        		.byte	0x62
+ 2605 0236 D202 0000 		.long	.LVL41-.Ltext0
+ 2606 023a EC02 0000 		.long	.LVL43-.Ltext0
+ 2607 023e 0100      		.word	0x1
+ 2608 0240 62        		.byte	0x62
+ 2609 0241 0000 0000 		.long	0
+ 2610 0245 0000 0000 		.long	0
+ 2611               	.LLST12:
+ 2612 0249 2A02 0000 		.long	.LVL29-.Ltext0
+ 2613 024d 3602 0000 		.long	.LVL30-.Ltext0
+ 2614 0251 0200      		.word	0x2
+ 2615 0253 30        		.byte	0x30
+ 2616 0254 9F        		.byte	0x9f
+ 2617 0255 4802 0000 		.long	.LVL32-.Ltext0
+ 2618 0259 4C02 0000 		.long	.LVL33-.Ltext0
+ 2619 025d 0200      		.word	0x2
+ 2620 025f 30        		.byte	0x30
+ 2621 0260 9F        		.byte	0x9f
+ 2622 0261 0000 0000 		.long	0
+ 2623 0265 0000 0000 		.long	0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 63
+
+
+ 2624               	.LLST13:
+ 2625 0269 B201 0000 		.long	.LVL17-.Ltext0
+ 2626 026d 1C02 0000 		.long	.LVL26-.Ltext0
+ 2627 0271 0200      		.word	0x2
+ 2628 0273 30        		.byte	0x30
+ 2629 0274 9F        		.byte	0x9f
+ 2630 0275 1C02 0000 		.long	.LVL26-.Ltext0
+ 2631 0279 1E02 0000 		.long	.LVL27-.Ltext0
+ 2632 027d 0200      		.word	0x2
+ 2633 027f 31        		.byte	0x31
+ 2634 0280 9F        		.byte	0x9f
+ 2635 0281 1E02 0000 		.long	.LVL27-.Ltext0
+ 2636 0285 5E02 0000 		.long	.LVL34-.Ltext0
+ 2637 0289 0200      		.word	0x2
+ 2638 028b 30        		.byte	0x30
+ 2639 028c 9F        		.byte	0x9f
+ 2640 028d D202 0000 		.long	.LVL41-.Ltext0
+ 2641 0291 EC02 0000 		.long	.LVL43-.Ltext0
+ 2642 0295 0200      		.word	0x2
+ 2643 0297 30        		.byte	0x30
+ 2644 0298 9F        		.byte	0x9f
+ 2645 0299 0000 0000 		.long	0
+ 2646 029d 0000 0000 		.long	0
+ 2647               	.LLST14:
+ 2648 02a1 0403 0000 		.long	.LFB9-.Ltext0
+ 2649 02a5 0603 0000 		.long	.LCFI12-.Ltext0
+ 2650 02a9 0300      		.word	0x3
+ 2651 02ab 92        		.byte	0x92
+ 2652 02ac 20        		.uleb128 0x20
+ 2653 02ad 02        		.sleb128 2
+ 2654 02ae 0603 0000 		.long	.LCFI12-.Ltext0
+ 2655 02b2 0803 0000 		.long	.LCFI13-.Ltext0
+ 2656 02b6 0300      		.word	0x3
+ 2657 02b8 92        		.byte	0x92
+ 2658 02b9 20        		.uleb128 0x20
+ 2659 02ba 03        		.sleb128 3
+ 2660 02bb 0803 0000 		.long	.LCFI13-.Ltext0
+ 2661 02bf 0A03 0000 		.long	.LCFI14-.Ltext0
+ 2662 02c3 0300      		.word	0x3
+ 2663 02c5 92        		.byte	0x92
+ 2664 02c6 20        		.uleb128 0x20
+ 2665 02c7 04        		.sleb128 4
+ 2666 02c8 0A03 0000 		.long	.LCFI14-.Ltext0
+ 2667 02cc 0C03 0000 		.long	.LCFI15-.Ltext0
+ 2668 02d0 0300      		.word	0x3
+ 2669 02d2 92        		.byte	0x92
+ 2670 02d3 20        		.uleb128 0x20
+ 2671 02d4 05        		.sleb128 5
+ 2672 02d5 0C03 0000 		.long	.LCFI15-.Ltext0
+ 2673 02d9 0E03 0000 		.long	.LCFI16-.Ltext0
+ 2674 02dd 0300      		.word	0x3
+ 2675 02df 92        		.byte	0x92
+ 2676 02e0 20        		.uleb128 0x20
+ 2677 02e1 06        		.sleb128 6
+ 2678 02e2 0E03 0000 		.long	.LCFI16-.Ltext0
+ 2679 02e6 1003 0000 		.long	.LCFI17-.Ltext0
+ 2680 02ea 0300      		.word	0x3
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 64
+
+
+ 2681 02ec 92        		.byte	0x92
+ 2682 02ed 20        		.uleb128 0x20
+ 2683 02ee 07        		.sleb128 7
+ 2684 02ef 1003 0000 		.long	.LCFI17-.Ltext0
+ 2685 02f3 1203 0000 		.long	.LCFI18-.Ltext0
+ 2686 02f7 0300      		.word	0x3
+ 2687 02f9 92        		.byte	0x92
+ 2688 02fa 20        		.uleb128 0x20
+ 2689 02fb 08        		.sleb128 8
+ 2690 02fc 1203 0000 		.long	.LCFI18-.Ltext0
+ 2691 0300 1403 0000 		.long	.LCFI19-.Ltext0
+ 2692 0304 0300      		.word	0x3
+ 2693 0306 92        		.byte	0x92
+ 2694 0307 20        		.uleb128 0x20
+ 2695 0308 09        		.sleb128 9
+ 2696 0309 1403 0000 		.long	.LCFI19-.Ltext0
+ 2697 030d 1603 0000 		.long	.LCFI20-.Ltext0
+ 2698 0311 0300      		.word	0x3
+ 2699 0313 92        		.byte	0x92
+ 2700 0314 20        		.uleb128 0x20
+ 2701 0315 0A        		.sleb128 10
+ 2702 0316 1603 0000 		.long	.LCFI20-.Ltext0
+ 2703 031a 1803 0000 		.long	.LCFI21-.Ltext0
+ 2704 031e 0300      		.word	0x3
+ 2705 0320 92        		.byte	0x92
+ 2706 0321 20        		.uleb128 0x20
+ 2707 0322 0B        		.sleb128 11
+ 2708 0323 1803 0000 		.long	.LCFI21-.Ltext0
+ 2709 0327 1A03 0000 		.long	.LCFI22-.Ltext0
+ 2710 032b 0300      		.word	0x3
+ 2711 032d 92        		.byte	0x92
+ 2712 032e 20        		.uleb128 0x20
+ 2713 032f 0C        		.sleb128 12
+ 2714 0330 1A03 0000 		.long	.LCFI22-.Ltext0
+ 2715 0334 1C03 0000 		.long	.LCFI23-.Ltext0
+ 2716 0338 0300      		.word	0x3
+ 2717 033a 92        		.byte	0x92
+ 2718 033b 20        		.uleb128 0x20
+ 2719 033c 0D        		.sleb128 13
+ 2720 033d 1C03 0000 		.long	.LCFI23-.Ltext0
+ 2721 0341 1E03 0000 		.long	.LCFI24-.Ltext0
+ 2722 0345 0300      		.word	0x3
+ 2723 0347 92        		.byte	0x92
+ 2724 0348 20        		.uleb128 0x20
+ 2725 0349 0E        		.sleb128 14
+ 2726 034a 1E03 0000 		.long	.LCFI24-.Ltext0
+ 2727 034e 2003 0000 		.long	.LCFI25-.Ltext0
+ 2728 0352 0300      		.word	0x3
+ 2729 0354 92        		.byte	0x92
+ 2730 0355 20        		.uleb128 0x20
+ 2731 0356 0F        		.sleb128 15
+ 2732 0357 2003 0000 		.long	.LCFI25-.Ltext0
+ 2733 035b FE03 0000 		.long	.LFE9-.Ltext0
+ 2734 035f 0300      		.word	0x3
+ 2735 0361 92        		.byte	0x92
+ 2736 0362 20        		.uleb128 0x20
+ 2737 0363 10        		.sleb128 16
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 65
+
+
+ 2738 0364 0000 0000 		.long	0
+ 2739 0368 0000 0000 		.long	0
+ 2740               	.LLST15:
+ 2741 036c 3403 0000 		.long	.LVL46-.Ltext0
+ 2742 0370 6A03 0000 		.long	.LVL47-.Ltext0
+ 2743 0374 0200      		.word	0x2
+ 2744 0376 30        		.byte	0x30
+ 2745 0377 9F        		.byte	0x9f
+ 2746 0378 0000 0000 		.long	0
+ 2747 037c 0000 0000 		.long	0
+ 2748               	.LLST16:
+ 2749 0380 7003 0000 		.long	.LVL48-.Ltext0
+ 2750 0384 B403 0000 		.long	.LVL66-.Ltext0
+ 2751 0388 0200      		.word	0x2
+ 2752 038a 30        		.byte	0x30
+ 2753 038b 9F        		.byte	0x9f
+ 2754 038c B403 0000 		.long	.LVL66-.Ltext0
+ 2755 0390 BD03 0000 		.long	.LVL71-1-.Ltext0
+ 2756 0394 0100      		.word	0x1
+ 2757 0396 68        		.byte	0x68
+ 2758 0397 0000 0000 		.long	0
+ 2759 039b 0000 0000 		.long	0
+ 2760               	.LLST17:
+ 2761 039f 7203 0000 		.long	.LVL49-.Ltext0
+ 2762 03a3 9403 0000 		.long	.LVL50-.Ltext0
+ 2763 03a7 0100      		.word	0x1
+ 2764 03a9 68        		.byte	0x68
+ 2765 03aa 9403 0000 		.long	.LVL50-.Ltext0
+ 2766 03ae 9603 0000 		.long	.LVL51-.Ltext0
+ 2767 03b2 0200      		.word	0x2
+ 2768 03b4 8C        		.byte	0x8c
+ 2769 03b5 00        		.sleb128 0
+ 2770 03b6 9603 0000 		.long	.LVL51-.Ltext0
+ 2771 03ba 9803 0000 		.long	.LVL52-.Ltext0
+ 2772 03be 0100      		.word	0x1
+ 2773 03c0 68        		.byte	0x68
+ 2774 03c1 9803 0000 		.long	.LVL52-.Ltext0
+ 2775 03c5 9A03 0000 		.long	.LVL53-.Ltext0
+ 2776 03c9 0200      		.word	0x2
+ 2777 03cb 8C        		.byte	0x8c
+ 2778 03cc 00        		.sleb128 0
+ 2779 03cd 9A03 0000 		.long	.LVL53-.Ltext0
+ 2780 03d1 9C03 0000 		.long	.LVL54-.Ltext0
+ 2781 03d5 0100      		.word	0x1
+ 2782 03d7 68        		.byte	0x68
+ 2783 03d8 9C03 0000 		.long	.LVL54-.Ltext0
+ 2784 03dc 9E03 0000 		.long	.LVL55-.Ltext0
+ 2785 03e0 0200      		.word	0x2
+ 2786 03e2 8C        		.byte	0x8c
+ 2787 03e3 00        		.sleb128 0
+ 2788 03e4 9E03 0000 		.long	.LVL55-.Ltext0
+ 2789 03e8 A003 0000 		.long	.LVL56-.Ltext0
+ 2790 03ec 0100      		.word	0x1
+ 2791 03ee 68        		.byte	0x68
+ 2792 03ef A003 0000 		.long	.LVL56-.Ltext0
+ 2793 03f3 A203 0000 		.long	.LVL57-.Ltext0
+ 2794 03f7 0200      		.word	0x2
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 66
+
+
+ 2795 03f9 8C        		.byte	0x8c
+ 2796 03fa 00        		.sleb128 0
+ 2797 03fb A203 0000 		.long	.LVL57-.Ltext0
+ 2798 03ff A403 0000 		.long	.LVL58-.Ltext0
+ 2799 0403 0100      		.word	0x1
+ 2800 0405 68        		.byte	0x68
+ 2801 0406 A403 0000 		.long	.LVL58-.Ltext0
+ 2802 040a A603 0000 		.long	.LVL59-.Ltext0
+ 2803 040e 0200      		.word	0x2
+ 2804 0410 8C        		.byte	0x8c
+ 2805 0411 00        		.sleb128 0
+ 2806 0412 A603 0000 		.long	.LVL59-.Ltext0
+ 2807 0416 A803 0000 		.long	.LVL60-.Ltext0
+ 2808 041a 0100      		.word	0x1
+ 2809 041c 68        		.byte	0x68
+ 2810 041d A803 0000 		.long	.LVL60-.Ltext0
+ 2811 0421 AA03 0000 		.long	.LVL61-.Ltext0
+ 2812 0425 0200      		.word	0x2
+ 2813 0427 8C        		.byte	0x8c
+ 2814 0428 00        		.sleb128 0
+ 2815 0429 AA03 0000 		.long	.LVL61-.Ltext0
+ 2816 042d AC03 0000 		.long	.LVL62-.Ltext0
+ 2817 0431 0100      		.word	0x1
+ 2818 0433 68        		.byte	0x68
+ 2819 0434 AC03 0000 		.long	.LVL62-.Ltext0
+ 2820 0438 AE03 0000 		.long	.LVL63-.Ltext0
+ 2821 043c 0200      		.word	0x2
+ 2822 043e 8C        		.byte	0x8c
+ 2823 043f 00        		.sleb128 0
+ 2824 0440 AE03 0000 		.long	.LVL63-.Ltext0
+ 2825 0444 B003 0000 		.long	.LVL64-.Ltext0
+ 2826 0448 0100      		.word	0x1
+ 2827 044a 68        		.byte	0x68
+ 2828 044b B003 0000 		.long	.LVL64-.Ltext0
+ 2829 044f B203 0000 		.long	.LVL65-.Ltext0
+ 2830 0453 0200      		.word	0x2
+ 2831 0455 8C        		.byte	0x8c
+ 2832 0456 00        		.sleb128 0
+ 2833 0457 B203 0000 		.long	.LVL65-.Ltext0
+ 2834 045b B403 0000 		.long	.LVL66-.Ltext0
+ 2835 045f 0100      		.word	0x1
+ 2836 0461 68        		.byte	0x68
+ 2837 0462 B403 0000 		.long	.LVL66-.Ltext0
+ 2838 0466 BD03 0000 		.long	.LVL71-1-.Ltext0
+ 2839 046a 0200      		.word	0x2
+ 2840 046c 8C        		.byte	0x8c
+ 2841 046d 00        		.sleb128 0
+ 2842 046e 0000 0000 		.long	0
+ 2843 0472 0000 0000 		.long	0
+ 2844               	.LLST18:
+ 2845 0476 6A03 0000 		.long	.LVL47-.Ltext0
+ 2846 047a DC03 0000 		.long	.LVL77-.Ltext0
+ 2847 047e 0600      		.word	0x6
+ 2848 0480 6C        		.byte	0x6c
+ 2849 0481 93        		.byte	0x93
+ 2850 0482 01        		.uleb128 0x1
+ 2851 0483 6D        		.byte	0x6d
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 67
+
+
+ 2852 0484 93        		.byte	0x93
+ 2853 0485 01        		.uleb128 0x1
+ 2854 0486 0000 0000 		.long	0
+ 2855 048a 0000 0000 		.long	0
+ 2856               	.LLST19:
+ 2857 048e B603 0000 		.long	.LVL67-.Ltext0
+ 2858 0492 CE03 0000 		.long	.LVL75-.Ltext0
+ 2859 0496 0100      		.word	0x1
+ 2860 0498 5E        		.byte	0x5e
+ 2861 0499 0000 0000 		.long	0
+ 2862 049d 0000 0000 		.long	0
+ 2863               	.LLST20:
+ 2864 04a1 B803 0000 		.long	.LVL68-.Ltext0
+ 2865 04a5 CE03 0000 		.long	.LVL75-.Ltext0
+ 2866 04a9 0100      		.word	0x1
+ 2867 04ab 5F        		.byte	0x5f
+ 2868 04ac 0000 0000 		.long	0
+ 2869 04b0 0000 0000 		.long	0
+ 2870               	.LLST21:
+ 2871 04b4 BA03 0000 		.long	.LVL69-.Ltext0
+ 2872 04b8 CE03 0000 		.long	.LVL75-.Ltext0
+ 2873 04bc 0100      		.word	0x1
+ 2874 04be 60        		.byte	0x60
+ 2875 04bf 0000 0000 		.long	0
+ 2876 04c3 0000 0000 		.long	0
+ 2877               	.LLST22:
+ 2878 04c7 BC03 0000 		.long	.LVL70-.Ltext0
+ 2879 04cb CE03 0000 		.long	.LVL75-.Ltext0
+ 2880 04cf 0100      		.word	0x1
+ 2881 04d1 61        		.byte	0x61
+ 2882 04d2 0000 0000 		.long	0
+ 2883 04d6 0000 0000 		.long	0
+ 2884               	.LLST23:
+ 2885 04da FE03 0000 		.long	.LVL79-.Ltext0
+ 2886 04de 2004 0000 		.long	.LVL80-.Ltext0
+ 2887 04e2 0100      		.word	0x1
+ 2888 04e4 68        		.byte	0x68
+ 2889 04e5 2004 0000 		.long	.LVL80-.Ltext0
+ 2890 04e9 3804 0000 		.long	.LVL85-.Ltext0
+ 2891 04ed 0400      		.word	0x4
+ 2892 04ef F3        		.byte	0xf3
+ 2893 04f0 01        		.uleb128 0x1
+ 2894 04f1 68        		.byte	0x68
+ 2895 04f2 9F        		.byte	0x9f
+ 2896 04f3 3804 0000 		.long	.LVL85-.Ltext0
+ 2897 04f7 3A04 0000 		.long	.LVL86-.Ltext0
+ 2898 04fb 0100      		.word	0x1
+ 2899 04fd 68        		.byte	0x68
+ 2900 04fe 3A04 0000 		.long	.LVL86-.Ltext0
+ 2901 0502 4204 0000 		.long	.LVL88-.Ltext0
+ 2902 0506 0400      		.word	0x4
+ 2903 0508 F3        		.byte	0xf3
+ 2904 0509 01        		.uleb128 0x1
+ 2905 050a 68        		.byte	0x68
+ 2906 050b 9F        		.byte	0x9f
+ 2907 050c 4204 0000 		.long	.LVL88-.Ltext0
+ 2908 0510 4304 0000 		.long	.LVL89-1-.Ltext0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 68
+
+
+ 2909 0514 0100      		.word	0x1
+ 2910 0516 68        		.byte	0x68
+ 2911 0517 4304 0000 		.long	.LVL89-1-.Ltext0
+ 2912 051b 4604 0000 		.long	.LVL90-.Ltext0
+ 2913 051f 0400      		.word	0x4
+ 2914 0521 F3        		.byte	0xf3
+ 2915 0522 01        		.uleb128 0x1
+ 2916 0523 68        		.byte	0x68
+ 2917 0524 9F        		.byte	0x9f
+ 2918 0525 4604 0000 		.long	.LVL90-.Ltext0
+ 2919 0529 4704 0000 		.long	.LVL91-1-.Ltext0
+ 2920 052d 0100      		.word	0x1
+ 2921 052f 68        		.byte	0x68
+ 2922 0530 4704 0000 		.long	.LVL91-1-.Ltext0
+ 2923 0534 4A04 0000 		.long	.LVL92-.Ltext0
+ 2924 0538 0400      		.word	0x4
+ 2925 053a F3        		.byte	0xf3
+ 2926 053b 01        		.uleb128 0x1
+ 2927 053c 68        		.byte	0x68
+ 2928 053d 9F        		.byte	0x9f
+ 2929 053e 4A04 0000 		.long	.LVL92-.Ltext0
+ 2930 0542 4E04 0000 		.long	.LVL93-.Ltext0
+ 2931 0546 0100      		.word	0x1
+ 2932 0548 68        		.byte	0x68
+ 2933 0549 4E04 0000 		.long	.LVL93-.Ltext0
+ 2934 054d 5804 0000 		.long	.LVL95-.Ltext0
+ 2935 0551 0400      		.word	0x4
+ 2936 0553 F3        		.byte	0xf3
+ 2937 0554 01        		.uleb128 0x1
+ 2938 0555 68        		.byte	0x68
+ 2939 0556 9F        		.byte	0x9f
+ 2940 0557 5804 0000 		.long	.LVL95-.Ltext0
+ 2941 055b 5C04 0000 		.long	.LVL96-.Ltext0
+ 2942 055f 0100      		.word	0x1
+ 2943 0561 68        		.byte	0x68
+ 2944 0562 5C04 0000 		.long	.LVL96-.Ltext0
+ 2945 0566 5E04 0000 		.long	.LFE5-.Ltext0
+ 2946 056a 0400      		.word	0x4
+ 2947 056c F3        		.byte	0xf3
+ 2948 056d 01        		.uleb128 0x1
+ 2949 056e 68        		.byte	0x68
+ 2950 056f 9F        		.byte	0x9f
+ 2951 0570 0000 0000 		.long	0
+ 2952 0574 0000 0000 		.long	0
+ 2953               		.section	.debug_aranges,"",@progbits
+ 2954 0000 1C00 0000 		.long	0x1c
+ 2955 0004 0200      		.word	0x2
+ 2956 0006 0000 0000 		.long	.Ldebug_info0
+ 2957 000a 04        		.byte	0x4
+ 2958 000b 00        		.byte	0
+ 2959 000c 0000      		.word	0
+ 2960 000e 0000      		.word	0
+ 2961 0010 0000 0000 		.long	.Ltext0
+ 2962 0014 5E04 0000 		.long	.Letext0-.Ltext0
+ 2963 0018 0000 0000 		.long	0
+ 2964 001c 0000 0000 		.long	0
+ 2965               		.section	.debug_ranges,"",@progbits
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 69
+
+
+ 2966               	.Ldebug_ranges0:
+ 2967 0000 8601 0000 		.long	.LBB4-.Ltext0
+ 2968 0004 6A02 0000 		.long	.LBE4-.Ltext0
+ 2969 0008 D202 0000 		.long	.LBB7-.Ltext0
+ 2970 000c EC02 0000 		.long	.LBE7-.Ltext0
+ 2971 0010 0000 0000 		.long	0
+ 2972 0014 0000 0000 		.long	0
+ 2973               		.section	.debug_line,"",@progbits
+ 2974               	.Ldebug_line0:
+ 2975 0000 6E05 0000 		.section	.debug_str,"MS",@progbits,1
+ 2975      0200 EB00 
+ 2975      0000 0201 
+ 2975      FB0E 0A00 
+ 2975      0101 0101 
+ 2976               	.LASF37:
+ 2977 0000 6375 7272 		.string	"currPixelRunStart"
+ 2977      5069 7865 
+ 2977      6C52 756E 
+ 2977      5374 6172 
+ 2977      7400 
+ 2978               	.LASF33:
+ 2979 0012 4672 616D 		.string	"FrameMgr_acquireLine"
+ 2979      654D 6772 
+ 2979      5F61 6371 
+ 2979      7569 7265 
+ 2979      4C69 6E65 
+ 2980               	.LASF42:
+ 2981 0027 746D 704C 		.string	"tmpLineCount"
+ 2981      696E 6543 
+ 2981      6F75 6E74 
+ 2981      00
+ 2982               	.LASF62:
+ 2983 0034 636F 6C6F 		.string	"colorMap"
+ 2983      724D 6170 
+ 2983      00
+ 2984               	.LASF10:
+ 2985 003d 5354 5F46 		.string	"ST_FrameMgr_TrackingFrame"
+ 2985      7261 6D65 
+ 2985      4D67 725F 
+ 2985      5472 6163 
+ 2985      6B69 6E67 
+ 2986               	.LASF24:
+ 2987 0057 6C61 7374 		.string	"lastLineXStart"
+ 2987      4C69 6E65 
+ 2987      5853 7461 
+ 2987      7274 00
+ 2988               	.LASF23:
+ 2989 0066 636F 6C6F 		.string	"color"
+ 2989      7200 
+ 2990               	.LASF61:
+ 2991 006c 7072 6576 		.string	"previousLineBuffer"
+ 2991      696F 7573 
+ 2991      4C69 6E65 
+ 2991      4275 6666 
+ 2991      6572 00
+ 2992               	.LASF26:
+ 2993 007f 785F 7570 		.string	"x_upperLeft"
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 70
+
+
+ 2993      7065 724C 
+ 2993      6566 7400 
+ 2994               	.LASF76:
+ 2995 008b 6576 656E 		.string	"event"
+ 2995      7400 
+ 2996               	.LASF32:
+ 2997 0091 4672 616D 		.string	"FrameMgr_acquireFrame"
+ 2997      654D 6772 
+ 2997      5F61 6371 
+ 2997      7569 7265 
+ 2997      4672 616D 
+ 2998               	.LASF35:
+ 2999 00a7 7043 7572 		.string	"pCurrLineColorInfo"
+ 2999      724C 696E 
+ 2999      6543 6F6C 
+ 2999      6F72 496E 
+ 2999      666F 00
+ 3000               	.LASF22:
+ 3001 00ba 7472 6163 		.string	"trackedColor_t"
+ 3001      6B65 6443 
+ 3001      6F6C 6F72 
+ 3001      5F74 00
+ 3002               	.LASF13:
+ 3003 00c9 6E6F 7454 		.string	"notTracked"
+ 3003      7261 636B 
+ 3003      6564 00
+ 3004               	.LASF7:
+ 3005 00d4 7569 6E74 		.string	"uint8_t"
+ 3005      385F 7400 
+ 3006               	.LASF65:
+ 3007 00dc 5561 7274 		.string	"UartInt_txByte"
+ 3007      496E 745F 
+ 3007      7478 4279 
+ 3007      7465 00
+ 3008               	.LASF28:
+ 3009 00eb 785F 6C6F 		.string	"x_lowerRight"
+ 3009      7765 7252 
+ 3009      6967 6874 
+ 3009      00
+ 3010               	.LASF41:
+ 3011 00f8 4672 616D 		.string	"FrameMgr_processLine"
+ 3011      654D 6772 
+ 3011      5F70 726F 
+ 3011      6365 7373 
+ 3011      4C69 6E65 
+ 3012               	.LASF73:
+ 3013 010d 433A 5C77 		.string	"C:\\workspace\\AVRcam\\MainController"
+ 3013      6F72 6B73 
+ 3013      7061 6365 
+ 3013      5C41 5652 
+ 3013      6361 6D5C 
+ 3014               	.LASF29:
+ 3015 0130 795F 6C6F 		.string	"y_lowerRight"
+ 3015      7765 7252 
+ 3015      6967 6874 
+ 3015      00
+ 3016               	.LASF57:
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 71
+
+
+ 3017 013d 6E75 6D50 		.string	"numPrevTrackedObjects"
+ 3017      7265 7654 
+ 3017      7261 636B 
+ 3017      6564 4F62 
+ 3017      6A65 6374 
+ 3018               	.LASF34:
+ 3019 0153 6375 7272 		.string	"currColor"
+ 3019      436F 6C6F 
+ 3019      7200 
+ 3020               	.LASF11:
+ 3021 015d 5354 5F46 		.string	"ST_FrameMgr_DumpingFrame"
+ 3021      7261 6D65 
+ 3021      4D67 725F 
+ 3021      4475 6D70 
+ 3021      696E 6746 
+ 3022               	.LASF59:
+ 3023 0176 6661 7374 		.string	"fastEventBitmask"
+ 3023      4576 656E 
+ 3023      7442 6974 
+ 3023      6D61 736B 
+ 3023      00
+ 3024               	.LASF5:
+ 3025 0187 6C6F 6E67 		.string	"long long int"
+ 3025      206C 6F6E 
+ 3025      6720 696E 
+ 3025      7400 
+ 3026               	.LASF74:
+ 3027 0195 4672 616D 		.string	"FrameMgr_init"
+ 3027      654D 6772 
+ 3027      5F69 6E69 
+ 3027      7400 
+ 3028               	.LASF1:
+ 3029 01a3 6C6F 6E67 		.string	"long int"
+ 3029      2069 6E74 
+ 3029      00
+ 3030               	.LASF25:
+ 3031 01ac 6C61 7374 		.string	"lastLineXFinish"
+ 3031      4C69 6E65 
+ 3031      5846 696E 
+ 3031      6973 6800 
+ 3032               	.LASF40:
+ 3033 01bc 636F 6C6F 		.string	"colorConnected"
+ 3033      7243 6F6E 
+ 3033      6E65 6374 
+ 3033      6564 00
+ 3034               	.LASF72:
+ 3035 01cb 4672 616D 		.string	"FrameMgr.c"
+ 3035      654D 6772 
+ 3035      2E63 00
+ 3036               	.LASF48:
+ 3037 01d6 746D 704C 		.string	"tmpLowerRightX"
+ 3037      6F77 6572 
+ 3037      5269 6768 
+ 3037      7458 00
+ 3038               	.LASF49:
+ 3039 01e5 746D 704C 		.string	"tmpLowerRightY"
+ 3039      6F77 6572 
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 72
+
+
+ 3039      5269 6768 
+ 3039      7459 00
+ 3040               	.LASF58:
+ 3041 01f4 7472 6163 		.string	"trackedLineCount"
+ 3041      6B65 644C 
+ 3041      696E 6543 
+ 3041      6F75 6E74 
+ 3041      00
+ 3042               	.LASF39:
+ 3043 0205 7275 6E4C 		.string	"runLength"
+ 3043      656E 6774 
+ 3043      6800 
+ 3044               	.LASF3:
+ 3045 020f 756E 7369 		.string	"unsigned char"
+ 3045      676E 6564 
+ 3045      2063 6861 
+ 3045      7200 
+ 3046               	.LASF67:
+ 3047 021d 4361 6D43 		.string	"CamConfig_sendFifoCmds"
+ 3047      6F6E 6669 
+ 3047      675F 7365 
+ 3047      6E64 4669 
+ 3047      666F 436D 
+ 3048               	.LASF12:
+ 3049 0234 4672 616D 		.string	"FrameMgr_State_t"
+ 3049      654D 6772 
+ 3049      5F53 7461 
+ 3049      7465 5F74 
+ 3049      00
+ 3050               	.LASF46:
+ 3051 0245 746D 7055 		.string	"tmpUpperLeftX"
+ 3051      7070 6572 
+ 3051      4C65 6674 
+ 3051      5800 
+ 3052               	.LASF47:
+ 3053 0253 746D 7055 		.string	"tmpUpperLeftY"
+ 3053      7070 6572 
+ 3053      4C65 6674 
+ 3053      5900 
+ 3054               	.LASF60:
+ 3055 0261 6375 7272 		.string	"currentLineBuffer"
+ 3055      656E 744C 
+ 3055      696E 6542 
+ 3055      7566 6665 
+ 3055      7200 
+ 3056               	.LASF2:
+ 3057 0273 7369 676E 		.string	"signed char"
+ 3057      6564 2063 
+ 3057      6861 7200 
+ 3058               	.LASF6:
+ 3059 027f 6C6F 6E67 		.string	"long long unsigned int"
+ 3059      206C 6F6E 
+ 3059      6720 756E 
+ 3059      7369 676E 
+ 3059      6564 2069 
+ 3060               	.LASF36:
+ 3061 0296 7054 7261 		.string	"pTrackedObjectData"
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 73
+
+
+ 3061      636B 6564 
+ 3061      4F62 6A65 
+ 3061      6374 4461 
+ 3061      7461 00
+ 3062               	.LASF38:
+ 3063 02a9 6375 7272 		.string	"currPixelRunFinish"
+ 3063      5069 7865 
+ 3063      6C52 756E 
+ 3063      4669 6E69 
+ 3063      7368 00
+ 3064               	.LASF0:
+ 3065 02bc 756E 7369 		.string	"unsigned int"
+ 3065      676E 6564 
+ 3065      2069 6E74 
+ 3065      00
+ 3066               	.LASF27:
+ 3067 02c9 795F 7570 		.string	"y_upperLeft"
+ 3067      7065 724C 
+ 3067      6566 7400 
+ 3068               	.LASF70:
+ 3069 02d5 5574 696C 		.string	"Utility_delay"
+ 3069      6974 795F 
+ 3069      6465 6C61 
+ 3069      7900 
+ 3070               	.LASF63:
+ 3071 02e3 4361 6D49 		.string	"CamIntAsm_acquireTrackingLine"
+ 3071      6E74 4173 
+ 3071      6D5F 6163 
+ 3071      7175 6972 
+ 3071      6554 7261 
+ 3072               	.LASF54:
+ 3073 0301 6C69 6E65 		.string	"lineCount"
+ 3073      436F 756E 
+ 3073      7400 
+ 3074               	.LASF69:
+ 3075 030b 5549 4D67 		.string	"UIMgr_writeTxFifo"
+ 3075      725F 7772 
+ 3075      6974 6554 
+ 3075      7846 6966 
+ 3075      6F00 
+ 3076               	.LASF64:
+ 3077 031d 4361 6D49 		.string	"CamIntAsm_acquireDumpLine"
+ 3077      6E74 4173 
+ 3077      6D5F 6163 
+ 3077      7175 6972 
+ 3077      6544 756D 
+ 3078               	.LASF55:
+ 3079 0337 6375 7272 		.string	"currentState"
+ 3079      656E 7453 
+ 3079      7461 7465 
+ 3079      00
+ 3080               	.LASF8:
+ 3081 0344 626F 6F6C 		.string	"bool_t"
+ 3081      5F74 00
+ 3082               	.LASF45:
+ 3083 034b 7054 6162 		.string	"pTableData"
+ 3083      6C65 4461 
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 74
+
+
+ 3083      7461 00
+ 3084               	.LASF50:
+ 3085 0356 4672 616D 		.string	"FrameMgr_dispatchEvent"
+ 3085      654D 6772 
+ 3085      5F64 6973 
+ 3085      7061 7463 
+ 3085      6845 7665 
+ 3086               	.LASF71:
+ 3087 036d 474E 5520 		.string	"GNU C11 5.4.0 -mn-flash=1 -mno-skip-bug -mmcu=avr4 -g -O1 -funsigned-char -funsigned-bitf
+ 3087      4331 3120 
+ 3087      352E 342E 
+ 3087      3020 2D6D 
+ 3087      6E2D 666C 
+ 3088               	.LASF56:
+ 3089 03e8 6E75 6D43 		.string	"numCurrTrackedObjects"
+ 3089      7572 7254 
+ 3089      7261 636B 
+ 3089      6564 4F62 
+ 3089      6A65 6374 
+ 3090               	.LASF44:
+ 3091 03fe 4672 616D 		.string	"FrameMgr_processFrame"
+ 3091      654D 6772 
+ 3091      5F70 726F 
+ 3091      6365 7373 
+ 3091      4672 616D 
+ 3092               	.LASF4:
+ 3093 0414 6C6F 6E67 		.string	"long unsigned int"
+ 3093      2075 6E73 
+ 3093      6967 6E65 
+ 3093      6420 696E 
+ 3093      7400 
+ 3094               	.LASF43:
+ 3095 0426 6461 7461 		.string	"dataToSend"
+ 3095      546F 5365 
+ 3095      6E64 00
+ 3096               	.LASF14:
+ 3097 0431 636F 6C6F 		.string	"color1"
+ 3097      7231 00
+ 3098               	.LASF15:
+ 3099 0438 636F 6C6F 		.string	"color2"
+ 3099      7232 00
+ 3100               	.LASF16:
+ 3101 043f 636F 6C6F 		.string	"color3"
+ 3101      7233 00
+ 3102               	.LASF17:
+ 3103 0446 636F 6C6F 		.string	"color4"
+ 3103      7234 00
+ 3104               	.LASF18:
+ 3105 044d 636F 6C6F 		.string	"color5"
+ 3105      7235 00
+ 3106               	.LASF19:
+ 3107 0454 636F 6C6F 		.string	"color6"
+ 3107      7236 00
+ 3108               	.LASF20:
+ 3109 045b 636F 6C6F 		.string	"color7"
+ 3109      7237 00
+ 3110               	.LASF21:
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 75
+
+
+ 3111 0462 636F 6C6F 		.string	"color8"
+ 3111      7238 00
+ 3112               	.LASF51:
+ 3113 0469 7369 7A65 		.string	"sizetype"
+ 3113      7479 7065 
+ 3113      00
+ 3114               	.LASF52:
+ 3115 0472 7472 6163 		.string	"trackedObjectTable"
+ 3115      6B65 644F 
+ 3115      626A 6563 
+ 3115      7454 6162 
+ 3115      6C65 00
+ 3116               	.LASF66:
+ 3117 0485 4361 6D43 		.string	"CamConfig_setCamReg"
+ 3117      6F6E 6669 
+ 3117      675F 7365 
+ 3117      7443 616D 
+ 3117      5265 6700 
+ 3118               	.LASF31:
+ 3119 0499 7472 6163 		.string	"trackedObject_t"
+ 3119      6B65 644F 
+ 3119      626A 6563 
+ 3119      745F 7400 
+ 3120               	.LASF9:
+ 3121 04a9 5354 5F46 		.string	"ST_FrameMgr_idle"
+ 3121      7261 6D65 
+ 3121      4D67 725F 
+ 3121      6964 6C65 
+ 3121      00
+ 3122               	.LASF68:
+ 3123 04ba 4578 6563 		.string	"Exec_writeEventFifo"
+ 3123      5F77 7269 
+ 3123      7465 4576 
+ 3123      656E 7446 
+ 3123      6966 6F00 
+ 3124               	.LASF30:
+ 3125 04ce 6F62 6A65 		.string	"objectValid"
+ 3125      6374 5661 
+ 3125      6C69 6400 
+ 3126               	.LASF75:
+ 3127 04da 4672 616D 		.string	"FrameMgr_findConnectedness"
+ 3127      654D 6772 
+ 3127      5F66 696E 
+ 3127      6443 6F6E 
+ 3127      6E65 6374 
+ 3128               	.LASF53:
+ 3129 04f5 7043 7572 		.string	"pCurrentTrackedObjectTable"
+ 3129      7265 6E74 
+ 3129      5472 6163 
+ 3129      6B65 644F 
+ 3129      626A 6563 
+ 3130               		.ident	"GCC: (AVR_8_bit_GNU_Toolchain_3.6.0_1734) 5.4.0"
+ 3131               	.global __do_clear_bss
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s 			page 76
+
+
+DEFINED SYMBOLS
+                            *ABS*:00000000 FrameMgr.c
+C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s:2      *ABS*:0000003e __SP_H__
+C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s:3      *ABS*:0000003d __SP_L__
+C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s:4      *ABS*:0000003f __SREG__
+C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s:5      *ABS*:00000000 __tmp_reg__
+C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s:6      *ABS*:00000001 __zero_reg__
+C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s:12     .text:00000000 FrameMgr_init
+C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s:1038   .bss:00000004 trackedObjectTable
+C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s:36     .text:00000010 FrameMgr_acquireFrame
+C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s:1034   .bss:00000002 currentState
+                             .bss:00000000 trackedLineCount
+C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s:1032   .bss:00000001 numCurrTrackedObjects
+C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s:79     .text:0000003e FrameMgr_acquireLine
+C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s:1036   .bss:00000003 lineCount
+C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s:174    .text:000000a8 FrameMgr_processLine
+C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s:663    .text:00000304 FrameMgr_processFrame
+C:\Users\Joe\AppData\Local\Temp\ccGFCZfB.s:933    .text:000003fe FrameMgr_dispatchEvent
+
+UNDEFINED SYMBOLS
+colorMap
+currentLineBuffer
+CamIntAsm_acquireTrackingLine
+previousLineBuffer
+CamIntAsm_acquireDumpLine
+UartInt_txByte
+CamConfig_setCamReg
+CamConfig_sendFifoCmds
+fastEventBitmask
+Exec_writeEventFifo
+UIMgr_writeTxFifo
+Utility_delay
+__do_clear_bss

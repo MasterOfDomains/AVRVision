@@ -1,0 +1,541 @@
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccWyxef5.s 			page 1
+
+
+   1               		.file	"Utility.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__tmp_reg__ = 0
+   6               	__zero_reg__ = 1
+   7               		.text
+   8               	.Ltext0:
+   9               		.cfi_sections	.debug_frame
+  10               	.global	Utility_delay
+  11               		.type	Utility_delay, @function
+  12               	Utility_delay:
+  13               	.LFB0:
+  14               		.file 1 "Utility.c"
+   1:Utility.c     **** /*
+   2:Utility.c     ****     Copyright (C) 2004    John Orlando
+   3:Utility.c     ****     
+   4:Utility.c     ****    AVRcam: a small real-time image processing engine.
+   5:Utility.c     **** 
+   6:Utility.c     ****     This program is free software; you can redistribute it and/or
+   7:Utility.c     ****     modify it under the terms of the GNU General Public
+   8:Utility.c     ****     License as published by the Free Software Foundation; either
+   9:Utility.c     ****     version 2 of the License, or (at your option) any later version.
+  10:Utility.c     **** 
+  11:Utility.c     ****     This program is distributed in the hope that it will be useful,
+  12:Utility.c     ****     but WITHOUT ANY WARRANTY; without even the implied warranty of
+  13:Utility.c     ****     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  14:Utility.c     ****     General Public License for more details.
+  15:Utility.c     **** 
+  16:Utility.c     ****     You should have received a copy of the GNU General Public
+  17:Utility.c     ****     License along with this program; if not, write to the Free Software
+  18:Utility.c     ****     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+  19:Utility.c     **** 
+  20:Utility.c     ****    For more information on the AVRcam, please contact:
+  21:Utility.c     **** 
+  22:Utility.c     ****    john@jrobot.net
+  23:Utility.c     **** 
+  24:Utility.c     ****    or go to www.jrobot.net for more details regarding the system.
+  25:Utility.c     **** */
+  26:Utility.c     **** /***********************************************************
+  27:Utility.c     **** 	Module Name: Utility.c
+  28:Utility.c     **** 	Module Date: 04/13/2004
+  29:Utility.c     **** 	Module Auth: John Orlando
+  30:Utility.c     **** 	
+  31:Utility.c     **** 	Description: This module provides a basic set of
+  32:Utility.c     **** 	general purpose utilities that can be used by any
+  33:Utility.c     **** 	module needing them.
+  34:Utility.c     ****     
+  35:Utility.c     ****     Revision History:
+  36:Utility.c     ****     Date        Rel Ver.    Notes
+  37:Utility.c     ****     4/10/2004      0.1     Module created
+  38:Utility.c     ****     6/30/2004      1.0     Initial release for Circuit Cellar
+  39:Utility.c     ****                            contest.
+  40:Utility.c     **** ***********************************************************/
+  41:Utility.c     **** 
+  42:Utility.c     **** /*	Includes */
+  43:Utility.c     **** #include "CommonDefs.h"
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccWyxef5.s 			page 2
+
+
+  44:Utility.c     **** 
+  45:Utility.c     **** /*  Local Variables */
+  46:Utility.c     **** 
+  47:Utility.c     **** /* 	Local Structures and Typedefs */
+  48:Utility.c     **** 
+  49:Utility.c     **** /*  Extern Variables */
+  50:Utility.c     **** 
+  51:Utility.c     **** /*  Definitions */
+  52:Utility.c     **** 
+  53:Utility.c     **** /***********************************************************
+  54:Utility.c     **** 	Function Name: Utility_delay
+  55:Utility.c     **** 	Function Description: This function provides a busy-wait
+  56:Utility.c     **** 	delay for a specified number of milliseconds.
+  57:Utility.c     **** 	Inputs:  numMs - the number of milliseconds to delay
+  58:Utility.c     **** 	Outputs: none
+  59:Utility.c     **** 	NOTES: The delay_loop_1 and delay_loop_2 functions found
+  60:Utility.c     **** 	in avr/delay.h provide accurate 3 and 4 cycle delay loops
+  61:Utility.c     **** 	if needed...this isn't really a millisecond, so DON'T
+  62:Utility.c     ****     depend on it for exact timing...
+  63:Utility.c     **** ***********************************************************/	
+  64:Utility.c     **** void Utility_delay(unsigned short numMs)
+  65:Utility.c     **** {
+  15               		.loc 1 65 0
+  16               		.cfi_startproc
+  17               	.LVL0:
+  18 0000 CF93      		push r28
+  19               	.LCFI0:
+  20               		.cfi_def_cfa_offset 3
+  21               		.cfi_offset 28, -2
+  22 0002 DF93      		push r29
+  23               	.LCFI1:
+  24               		.cfi_def_cfa_offset 4
+  25               		.cfi_offset 29, -3
+  26 0004 00D0      		rcall .
+  27 0006 00D0      		rcall .
+  28               	.LCFI2:
+  29               		.cfi_def_cfa_offset 8
+  30 0008 CDB7      		in r28,__SP_L__
+  31 000a DEB7      		in r29,__SP_H__
+  32               	.LCFI3:
+  33               		.cfi_def_cfa_register 28
+  34               	/* prologue: function */
+  35               	/* frame size = 4 */
+  36               	/* stack size = 6 */
+  37               	.L__stack_usage = 6
+  66:Utility.c     **** 	volatile unsigned short i=0,j=0;
+  38               		.loc 1 66 0
+  39 000c 1A82      		std Y+2,__zero_reg__
+  40 000e 1982      		std Y+1,__zero_reg__
+  41 0010 1C82      		std Y+4,__zero_reg__
+  42 0012 1B82      		std Y+3,__zero_reg__
+  67:Utility.c     **** #ifndef SIMULATION
+  68:Utility.c     **** 	for (i=0; i<numMs; i++)
+  43               		.loc 1 68 0
+  44 0014 1A82      		std Y+2,__zero_reg__
+  45 0016 1982      		std Y+1,__zero_reg__
+  46 0018 2981      		ldd r18,Y+1
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccWyxef5.s 			page 3
+
+
+  47 001a 3A81      		ldd r19,Y+2
+  48 001c 2817      		cp r18,r24
+  49 001e 3907      		cpc r19,r25
+  50 0020 00F4      		brsh .L1
+  51               	.L6:
+  69:Utility.c     **** 	{
+  70:Utility.c     **** 		for (j=0; j<1000; j++)
+  52               		.loc 1 70 0
+  53 0022 1C82      		std Y+4,__zero_reg__
+  54 0024 1B82      		std Y+3,__zero_reg__
+  55 0026 2B81      		ldd r18,Y+3
+  56 0028 3C81      		ldd r19,Y+4
+  57 002a 283E      		cpi r18,-24
+  58 002c 3340      		sbci r19,3
+  59 002e 00F4      		brsh .L3
+  60               	.L7:
+  71:Utility.c     **** 		{
+  72:Utility.c     **** 			asm volatile("nop"::);
+  61               		.loc 1 72 0 discriminator 3
+  62               	/* #APP */
+  63               	 ;  72 "Utility.c" 1
+  64 0030 0000      		nop
+  65               	 ;  0 "" 2
+  70:Utility.c     **** 		{
+  66               		.loc 1 70 0 discriminator 3
+  67               	/* #NOAPP */
+  68 0032 2B81      		ldd r18,Y+3
+  69 0034 3C81      		ldd r19,Y+4
+  70 0036 2F5F      		subi r18,-1
+  71 0038 3F4F      		sbci r19,-1
+  72 003a 3C83      		std Y+4,r19
+  73 003c 2B83      		std Y+3,r18
+  74 003e 2B81      		ldd r18,Y+3
+  75 0040 3C81      		ldd r19,Y+4
+  76 0042 283E      		cpi r18,-24
+  77 0044 3340      		sbci r19,3
+  78 0046 00F0      		brlo .L7
+  79               	.L3:
+  68:Utility.c     **** 	{
+  80               		.loc 1 68 0 discriminator 2
+  81 0048 2981      		ldd r18,Y+1
+  82 004a 3A81      		ldd r19,Y+2
+  83 004c 2F5F      		subi r18,-1
+  84 004e 3F4F      		sbci r19,-1
+  85 0050 3A83      		std Y+2,r19
+  86 0052 2983      		std Y+1,r18
+  87 0054 2981      		ldd r18,Y+1
+  88 0056 3A81      		ldd r19,Y+2
+  89 0058 2817      		cp r18,r24
+  90 005a 3907      		cpc r19,r25
+  91 005c 00F0      		brlo .L6
+  92               	.L1:
+  93               	/* epilogue start */
+  73:Utility.c     **** 		}
+  74:Utility.c     **** 	}
+  75:Utility.c     **** #endif	
+  76:Utility.c     **** }
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccWyxef5.s 			page 4
+
+
+  94               		.loc 1 76 0
+  95 005e 0F90      		pop __tmp_reg__
+  96 0060 0F90      		pop __tmp_reg__
+  97 0062 0F90      		pop __tmp_reg__
+  98 0064 0F90      		pop __tmp_reg__
+  99 0066 DF91      		pop r29
+ 100 0068 CF91      		pop r28
+ 101 006a 0895      		ret
+ 102               		.cfi_endproc
+ 103               	.LFE0:
+ 104               		.size	Utility_delay, .-Utility_delay
+ 105               	.Letext0:
+ 106               		.section	.debug_info,"",@progbits
+ 107               	.Ldebug_info0:
+ 108 0000 AB00 0000 		.long	0xab
+ 109 0004 0200      		.word	0x2
+ 110 0006 0000 0000 		.long	.Ldebug_abbrev0
+ 111 000a 04        		.byte	0x4
+ 112 000b 01        		.uleb128 0x1
+ 113 000c 0000 0000 		.long	.LASF8
+ 114 0010 0C        		.byte	0xc
+ 115 0011 0000 0000 		.long	.LASF9
+ 116 0015 0000 0000 		.long	.LASF10
+ 117 0019 0000 0000 		.long	.Ltext0
+ 118 001d 0000 0000 		.long	.Letext0
+ 119 0021 0000 0000 		.long	.Ldebug_line0
+ 120 0025 02        		.uleb128 0x2
+ 121 0026 01        		.byte	0x1
+ 122 0027 06        		.byte	0x6
+ 123 0028 0000 0000 		.long	.LASF0
+ 124 002c 02        		.uleb128 0x2
+ 125 002d 01        		.byte	0x1
+ 126 002e 08        		.byte	0x8
+ 127 002f 0000 0000 		.long	.LASF1
+ 128 0033 03        		.uleb128 0x3
+ 129 0034 02        		.byte	0x2
+ 130 0035 05        		.byte	0x5
+ 131 0036 696E 7400 		.string	"int"
+ 132 003a 02        		.uleb128 0x2
+ 133 003b 02        		.byte	0x2
+ 134 003c 07        		.byte	0x7
+ 135 003d 0000 0000 		.long	.LASF2
+ 136 0041 02        		.uleb128 0x2
+ 137 0042 04        		.byte	0x4
+ 138 0043 05        		.byte	0x5
+ 139 0044 0000 0000 		.long	.LASF3
+ 140 0048 02        		.uleb128 0x2
+ 141 0049 04        		.byte	0x4
+ 142 004a 07        		.byte	0x7
+ 143 004b 0000 0000 		.long	.LASF4
+ 144 004f 02        		.uleb128 0x2
+ 145 0050 08        		.byte	0x8
+ 146 0051 05        		.byte	0x5
+ 147 0052 0000 0000 		.long	.LASF5
+ 148 0056 02        		.uleb128 0x2
+ 149 0057 08        		.byte	0x8
+ 150 0058 07        		.byte	0x7
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccWyxef5.s 			page 5
+
+
+ 151 0059 0000 0000 		.long	.LASF6
+ 152 005d 04        		.uleb128 0x4
+ 153 005e 01        		.byte	0x1
+ 154 005f 0000 0000 		.long	.LASF11
+ 155 0063 01        		.byte	0x1
+ 156 0064 40        		.byte	0x40
+ 157 0065 01        		.byte	0x1
+ 158 0066 0000 0000 		.long	.LFB0
+ 159 006a 0000 0000 		.long	.LFE0
+ 160 006e 0000 0000 		.long	.LLST0
+ 161 0072 01        		.byte	0x1
+ 162 0073 A200 0000 		.long	0xa2
+ 163 0077 05        		.uleb128 0x5
+ 164 0078 0000 0000 		.long	.LASF12
+ 165 007c 01        		.byte	0x1
+ 166 007d 40        		.byte	0x40
+ 167 007e A200 0000 		.long	0xa2
+ 168 0082 06        		.byte	0x6
+ 169 0083 68        		.byte	0x68
+ 170 0084 93        		.byte	0x93
+ 171 0085 01        		.uleb128 0x1
+ 172 0086 69        		.byte	0x69
+ 173 0087 93        		.byte	0x93
+ 174 0088 01        		.uleb128 0x1
+ 175 0089 06        		.uleb128 0x6
+ 176 008a 6900      		.string	"i"
+ 177 008c 01        		.byte	0x1
+ 178 008d 42        		.byte	0x42
+ 179 008e A900 0000 		.long	0xa9
+ 180 0092 02        		.byte	0x2
+ 181 0093 8C        		.byte	0x8c
+ 182 0094 01        		.sleb128 1
+ 183 0095 06        		.uleb128 0x6
+ 184 0096 6A00      		.string	"j"
+ 185 0098 01        		.byte	0x1
+ 186 0099 42        		.byte	0x42
+ 187 009a A900 0000 		.long	0xa9
+ 188 009e 02        		.byte	0x2
+ 189 009f 8C        		.byte	0x8c
+ 190 00a0 03        		.sleb128 3
+ 191 00a1 00        		.byte	0
+ 192 00a2 02        		.uleb128 0x2
+ 193 00a3 02        		.byte	0x2
+ 194 00a4 07        		.byte	0x7
+ 195 00a5 0000 0000 		.long	.LASF7
+ 196 00a9 07        		.uleb128 0x7
+ 197 00aa A200 0000 		.long	0xa2
+ 198 00ae 00        		.byte	0
+ 199               		.section	.debug_abbrev,"",@progbits
+ 200               	.Ldebug_abbrev0:
+ 201 0000 01        		.uleb128 0x1
+ 202 0001 11        		.uleb128 0x11
+ 203 0002 01        		.byte	0x1
+ 204 0003 25        		.uleb128 0x25
+ 205 0004 0E        		.uleb128 0xe
+ 206 0005 13        		.uleb128 0x13
+ 207 0006 0B        		.uleb128 0xb
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccWyxef5.s 			page 6
+
+
+ 208 0007 03        		.uleb128 0x3
+ 209 0008 0E        		.uleb128 0xe
+ 210 0009 1B        		.uleb128 0x1b
+ 211 000a 0E        		.uleb128 0xe
+ 212 000b 11        		.uleb128 0x11
+ 213 000c 01        		.uleb128 0x1
+ 214 000d 12        		.uleb128 0x12
+ 215 000e 01        		.uleb128 0x1
+ 216 000f 10        		.uleb128 0x10
+ 217 0010 06        		.uleb128 0x6
+ 218 0011 00        		.byte	0
+ 219 0012 00        		.byte	0
+ 220 0013 02        		.uleb128 0x2
+ 221 0014 24        		.uleb128 0x24
+ 222 0015 00        		.byte	0
+ 223 0016 0B        		.uleb128 0xb
+ 224 0017 0B        		.uleb128 0xb
+ 225 0018 3E        		.uleb128 0x3e
+ 226 0019 0B        		.uleb128 0xb
+ 227 001a 03        		.uleb128 0x3
+ 228 001b 0E        		.uleb128 0xe
+ 229 001c 00        		.byte	0
+ 230 001d 00        		.byte	0
+ 231 001e 03        		.uleb128 0x3
+ 232 001f 24        		.uleb128 0x24
+ 233 0020 00        		.byte	0
+ 234 0021 0B        		.uleb128 0xb
+ 235 0022 0B        		.uleb128 0xb
+ 236 0023 3E        		.uleb128 0x3e
+ 237 0024 0B        		.uleb128 0xb
+ 238 0025 03        		.uleb128 0x3
+ 239 0026 08        		.uleb128 0x8
+ 240 0027 00        		.byte	0
+ 241 0028 00        		.byte	0
+ 242 0029 04        		.uleb128 0x4
+ 243 002a 2E        		.uleb128 0x2e
+ 244 002b 01        		.byte	0x1
+ 245 002c 3F        		.uleb128 0x3f
+ 246 002d 0C        		.uleb128 0xc
+ 247 002e 03        		.uleb128 0x3
+ 248 002f 0E        		.uleb128 0xe
+ 249 0030 3A        		.uleb128 0x3a
+ 250 0031 0B        		.uleb128 0xb
+ 251 0032 3B        		.uleb128 0x3b
+ 252 0033 0B        		.uleb128 0xb
+ 253 0034 27        		.uleb128 0x27
+ 254 0035 0C        		.uleb128 0xc
+ 255 0036 11        		.uleb128 0x11
+ 256 0037 01        		.uleb128 0x1
+ 257 0038 12        		.uleb128 0x12
+ 258 0039 01        		.uleb128 0x1
+ 259 003a 40        		.uleb128 0x40
+ 260 003b 06        		.uleb128 0x6
+ 261 003c 9742      		.uleb128 0x2117
+ 262 003e 0C        		.uleb128 0xc
+ 263 003f 01        		.uleb128 0x1
+ 264 0040 13        		.uleb128 0x13
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccWyxef5.s 			page 7
+
+
+ 265 0041 00        		.byte	0
+ 266 0042 00        		.byte	0
+ 267 0043 05        		.uleb128 0x5
+ 268 0044 05        		.uleb128 0x5
+ 269 0045 00        		.byte	0
+ 270 0046 03        		.uleb128 0x3
+ 271 0047 0E        		.uleb128 0xe
+ 272 0048 3A        		.uleb128 0x3a
+ 273 0049 0B        		.uleb128 0xb
+ 274 004a 3B        		.uleb128 0x3b
+ 275 004b 0B        		.uleb128 0xb
+ 276 004c 49        		.uleb128 0x49
+ 277 004d 13        		.uleb128 0x13
+ 278 004e 02        		.uleb128 0x2
+ 279 004f 0A        		.uleb128 0xa
+ 280 0050 00        		.byte	0
+ 281 0051 00        		.byte	0
+ 282 0052 06        		.uleb128 0x6
+ 283 0053 34        		.uleb128 0x34
+ 284 0054 00        		.byte	0
+ 285 0055 03        		.uleb128 0x3
+ 286 0056 08        		.uleb128 0x8
+ 287 0057 3A        		.uleb128 0x3a
+ 288 0058 0B        		.uleb128 0xb
+ 289 0059 3B        		.uleb128 0x3b
+ 290 005a 0B        		.uleb128 0xb
+ 291 005b 49        		.uleb128 0x49
+ 292 005c 13        		.uleb128 0x13
+ 293 005d 02        		.uleb128 0x2
+ 294 005e 0A        		.uleb128 0xa
+ 295 005f 00        		.byte	0
+ 296 0060 00        		.byte	0
+ 297 0061 07        		.uleb128 0x7
+ 298 0062 35        		.uleb128 0x35
+ 299 0063 00        		.byte	0
+ 300 0064 49        		.uleb128 0x49
+ 301 0065 13        		.uleb128 0x13
+ 302 0066 00        		.byte	0
+ 303 0067 00        		.byte	0
+ 304 0068 00        		.byte	0
+ 305               		.section	.debug_loc,"",@progbits
+ 306               	.Ldebug_loc0:
+ 307               	.LLST0:
+ 308 0000 0000 0000 		.long	.LFB0-.Ltext0
+ 309 0004 0200 0000 		.long	.LCFI0-.Ltext0
+ 310 0008 0300      		.word	0x3
+ 311 000a 92        		.byte	0x92
+ 312 000b 20        		.uleb128 0x20
+ 313 000c 02        		.sleb128 2
+ 314 000d 0200 0000 		.long	.LCFI0-.Ltext0
+ 315 0011 0400 0000 		.long	.LCFI1-.Ltext0
+ 316 0015 0300      		.word	0x3
+ 317 0017 92        		.byte	0x92
+ 318 0018 20        		.uleb128 0x20
+ 319 0019 03        		.sleb128 3
+ 320 001a 0400 0000 		.long	.LCFI1-.Ltext0
+ 321 001e 0800 0000 		.long	.LCFI2-.Ltext0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccWyxef5.s 			page 8
+
+
+ 322 0022 0300      		.word	0x3
+ 323 0024 92        		.byte	0x92
+ 324 0025 20        		.uleb128 0x20
+ 325 0026 04        		.sleb128 4
+ 326 0027 0800 0000 		.long	.LCFI2-.Ltext0
+ 327 002b 0C00 0000 		.long	.LCFI3-.Ltext0
+ 328 002f 0300      		.word	0x3
+ 329 0031 92        		.byte	0x92
+ 330 0032 20        		.uleb128 0x20
+ 331 0033 08        		.sleb128 8
+ 332 0034 0C00 0000 		.long	.LCFI3-.Ltext0
+ 333 0038 6C00 0000 		.long	.LFE0-.Ltext0
+ 334 003c 0200      		.word	0x2
+ 335 003e 8C        		.byte	0x8c
+ 336 003f 08        		.sleb128 8
+ 337 0040 0000 0000 		.long	0
+ 338 0044 0000 0000 		.long	0
+ 339               		.section	.debug_aranges,"",@progbits
+ 340 0000 1C00 0000 		.long	0x1c
+ 341 0004 0200      		.word	0x2
+ 342 0006 0000 0000 		.long	.Ldebug_info0
+ 343 000a 04        		.byte	0x4
+ 344 000b 00        		.byte	0
+ 345 000c 0000      		.word	0
+ 346 000e 0000      		.word	0
+ 347 0010 0000 0000 		.long	.Ltext0
+ 348 0014 6C00 0000 		.long	.Letext0-.Ltext0
+ 349 0018 0000 0000 		.long	0
+ 350 001c 0000 0000 		.long	0
+ 351               		.section	.debug_line,"",@progbits
+ 352               	.Ldebug_line0:
+ 353 0000 6A00 0000 		.section	.debug_str,"MS",@progbits,1
+ 353      0200 1D00 
+ 353      0000 0201 
+ 353      FB0E 0A00 
+ 353      0101 0101 
+ 354               	.LASF11:
+ 355 0000 5574 696C 		.string	"Utility_delay"
+ 355      6974 795F 
+ 355      6465 6C61 
+ 355      7900 
+ 356               	.LASF7:
+ 357 000e 7368 6F72 		.string	"short unsigned int"
+ 357      7420 756E 
+ 357      7369 676E 
+ 357      6564 2069 
+ 357      6E74 00
+ 358               	.LASF1:
+ 359 0021 756E 7369 		.string	"unsigned char"
+ 359      676E 6564 
+ 359      2063 6861 
+ 359      7200 
+ 360               	.LASF4:
+ 361 002f 6C6F 6E67 		.string	"long unsigned int"
+ 361      2075 6E73 
+ 361      6967 6E65 
+ 361      6420 696E 
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccWyxef5.s 			page 9
+
+
+ 361      7400 
+ 362               	.LASF9:
+ 363 0041 5574 696C 		.string	"Utility.c"
+ 363      6974 792E 
+ 363      6300 
+ 364               	.LASF10:
+ 365 004b 433A 5C77 		.string	"C:\\workspace\\AVRcam\\MainController"
+ 365      6F72 6B73 
+ 365      7061 6365 
+ 365      5C41 5652 
+ 365      6361 6D5C 
+ 366               	.LASF2:
+ 367 006e 756E 7369 		.string	"unsigned int"
+ 367      676E 6564 
+ 367      2069 6E74 
+ 367      00
+ 368               	.LASF6:
+ 369 007b 6C6F 6E67 		.string	"long long unsigned int"
+ 369      206C 6F6E 
+ 369      6720 756E 
+ 369      7369 676E 
+ 369      6564 2069 
+ 370               	.LASF5:
+ 371 0092 6C6F 6E67 		.string	"long long int"
+ 371      206C 6F6E 
+ 371      6720 696E 
+ 371      7400 
+ 372               	.LASF8:
+ 373 00a0 474E 5520 		.string	"GNU C11 5.4.0 -mn-flash=1 -mno-skip-bug -mmcu=avr4 -g -O1 -funsigned-char -funsigned-bitf
+ 373      4331 3120 
+ 373      352E 342E 
+ 373      3020 2D6D 
+ 373      6E2D 666C 
+ 374               	.LASF3:
+ 375 011b 6C6F 6E67 		.string	"long int"
+ 375      2069 6E74 
+ 375      00
+ 376               	.LASF12:
+ 377 0124 6E75 6D4D 		.string	"numMs"
+ 377      7300 
+ 378               	.LASF0:
+ 379 012a 7369 676E 		.string	"signed char"
+ 379      6564 2063 
+ 379      6861 7200 
+ 380               		.ident	"GCC: (AVR_8_bit_GNU_Toolchain_3.6.0_1734) 5.4.0"
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccWyxef5.s 			page 10
+
+
+DEFINED SYMBOLS
+                            *ABS*:00000000 Utility.c
+C:\Users\Joe\AppData\Local\Temp\ccWyxef5.s:2      *ABS*:0000003e __SP_H__
+C:\Users\Joe\AppData\Local\Temp\ccWyxef5.s:3      *ABS*:0000003d __SP_L__
+C:\Users\Joe\AppData\Local\Temp\ccWyxef5.s:4      *ABS*:0000003f __SREG__
+C:\Users\Joe\AppData\Local\Temp\ccWyxef5.s:5      *ABS*:00000000 __tmp_reg__
+C:\Users\Joe\AppData\Local\Temp\ccWyxef5.s:6      *ABS*:00000001 __zero_reg__
+C:\Users\Joe\AppData\Local\Temp\ccWyxef5.s:12     .text:00000000 Utility_delay
+
+NO UNDEFINED SYMBOLS

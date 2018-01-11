@@ -1,0 +1,1630 @@
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 1
+
+
+   1               		.file	"CamConfig.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__tmp_reg__ = 0
+   6               	__zero_reg__ = 1
+   7               		.text
+   8               	.Ltext0:
+   9               		.cfi_sections	.debug_frame
+  10               	.global	CamConfig_sendFifoCmds
+  11               		.type	CamConfig_sendFifoCmds, @function
+  12               	CamConfig_sendFifoCmds:
+  13               	.LFB2:
+  14               		.file 1 "CamConfig.c"
+   1:CamConfig.c   **** /*
+   2:CamConfig.c   ****     Copyright (C) 2004    John Orlando
+   3:CamConfig.c   ****     
+   4:CamConfig.c   ****    AVRcam: a small real-time image processing engine.
+   5:CamConfig.c   **** 
+   6:CamConfig.c   ****     This program is free software; you can redistribute it and/or
+   7:CamConfig.c   ****     modify it under the terms of the GNU General Public
+   8:CamConfig.c   ****     License as published by the Free Software Foundation; either
+   9:CamConfig.c   ****     version 2 of the License, or (at your option) any later version.
+  10:CamConfig.c   **** 
+  11:CamConfig.c   ****     This program is distributed in the hope that it will be useful,
+  12:CamConfig.c   ****     but WITHOUT ANY WARRANTY; without even the implied warranty of
+  13:CamConfig.c   ****     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  14:CamConfig.c   ****     General Public License for more details.
+  15:CamConfig.c   **** 
+  16:CamConfig.c   ****     You should have received a copy of the GNU General Public
+  17:CamConfig.c   ****     License along with this program; if not, write to the Free Software
+  18:CamConfig.c   ****     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+  19:CamConfig.c   **** 
+  20:CamConfig.c   ****    For more information on the AVRcam, please contact:
+  21:CamConfig.c   **** 
+  22:CamConfig.c   ****    john@jrobot.net
+  23:CamConfig.c   **** 
+  24:CamConfig.c   ****    or go to www.jrobot.net for more details regarding the system.
+  25:CamConfig.c   **** */
+  26:CamConfig.c   **** /**********************************************************
+  27:CamConfig.c   **** 	Module Name: CamConfig.c
+  28:CamConfig.c   **** 	Module Date: 04/10/2004
+  29:CamConfig.c   ****     Module Auth: John Orlando 
+  30:CamConfig.c   **** 	
+  31:CamConfig.c   **** 	Description: This module is responsible for the 
+  32:CamConfig.c   **** 	high-level configuration activities of the OV6620
+  33:CamConfig.c   **** 	camera module.  This module interfaces with the
+  34:CamConfig.c   **** 	I2CInterface module to perform this configuration.
+  35:CamConfig.c   ****     
+  36:CamConfig.c   ****     Revision History:
+  37:CamConfig.c   ****     Date        Rel Ver.    Notes
+  38:CamConfig.c   ****     4/10/2004      0.1     Module created
+  39:CamConfig.c   ****     6/30/2004      1.0     Initial release for Circuit Cellar
+  40:CamConfig.c   ****                            contest.
+  41:CamConfig.c   ****     11/15/2004     1.2     Added code to un-tri-state the
+  42:CamConfig.c   ****                            OV6620's pixel data busses at
+  43:CamConfig.c   ****                            startup after four seconds.  
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 2
+
+
+  44:CamConfig.c   ****                            This was added in to 
+  45:CamConfig.c   ****                            allow the user to re-program the
+  46:CamConfig.c   ****                            mega8 at startup if needed.
+  47:CamConfig.c   **** ***********************************************************/
+  48:CamConfig.c   **** 
+  49:CamConfig.c   **** /*  Includes */
+  50:CamConfig.c   **** #include <avr/io.h>
+  51:CamConfig.c   **** #include "CamConfig.h"
+  52:CamConfig.c   **** #include "I2CInterface.h"
+  53:CamConfig.c   **** #include "CommonDefs.h"
+  54:CamConfig.c   **** #include "Utility.h"
+  55:CamConfig.c   **** 
+  56:CamConfig.c   **** /**********************************************************/
+  57:CamConfig.c   **** /*  Definitions */
+  58:CamConfig.c   **** /* The length of an I2C command is made up of a register address
+  59:CamConfig.c   **** plus the actual value of the register */
+  60:CamConfig.c   **** #define SIZE_OF_I2C_CMD 2
+  61:CamConfig.c   **** #define MAX_NUM_CONFIG_CMDS 8
+  62:CamConfig.c   **** #define CAM_CONFIG_TX_FIFO_SIZE MAX_NUM_CONFIG_CMDS 
+  63:CamConfig.c   **** #define CAM_CONFIG_TX_FIFO_MASK CAM_CONFIG_TX_FIFO_SIZE-1
+  64:CamConfig.c   **** 
+  65:CamConfig.c   **** /*  Local Variables */
+  66:CamConfig.c   **** 
+  67:CamConfig.c   **** /*  Local Structures and Typedefs */
+  68:CamConfig.c   **** 
+  69:CamConfig.c   **** /*  Local Function Prototypes */
+  70:CamConfig.c   **** static i2cCmd_t CamConfig_readTxFifo(void);
+  71:CamConfig.c   **** 
+  72:CamConfig.c   **** /*  Extern Variables */
+  73:CamConfig.c   **** i2cCmd_t 		CamConfig_txFifo[CAM_CONFIG_TX_FIFO_SIZE];
+  74:CamConfig.c   **** unsigned char CamConfig_txFifoHead=0;
+  75:CamConfig.c   **** unsigned char CamConfig_txFifoTail=0;
+  76:CamConfig.c   **** 
+  77:CamConfig.c   **** /***********************************************************
+  78:CamConfig.c   **** 	Function Name: CamConfig_init
+  79:CamConfig.c   **** 	Function Description: This function is responsible for
+  80:CamConfig.c   **** 	performing the initial configuration of the camera.
+  81:CamConfig.c   **** 	Inputs:  none
+  82:CamConfig.c   **** 	Outputs: none
+  83:CamConfig.c   **** ***********************************************************/	
+  84:CamConfig.c   **** void CamConfig_init(void)
+  85:CamConfig.c   **** {
+  86:CamConfig.c   **** 	CamConfig_setCamReg(0x14,0x20);  /* reduce frame size */
+  87:CamConfig.c   **** 	CamConfig_setCamReg(0x39,0x40);  /* gate PCLK with HREF */
+  88:CamConfig.c   **** 	CamConfig_setCamReg(0x12,0x28);  /* set RGB mode, with no AWB */
+  89:CamConfig.c   **** 	CamConfig_setCamReg(0x28,0x05);  /* set color sequencer */
+  90:CamConfig.c   ****     CamConfig_setCamReg(0x13,0x01);  /* un-tri-state the Y/UV lines */
+  91:CamConfig.c   **** 	
+  92:CamConfig.c   **** 	/* send the first four cmds in the I2C fifo */
+  93:CamConfig.c   **** 	CamConfig_sendFifoCmds();	
+  94:CamConfig.c   **** }
+  95:CamConfig.c   **** 
+  96:CamConfig.c   **** 
+  97:CamConfig.c   **** /***********************************************************
+  98:CamConfig.c   **** 	Function Name: CamConfig_setCamReg
+  99:CamConfig.c   **** 	Function Description: This function is responsible for
+ 100:CamConfig.c   **** 	creating an I2C cmd structure and placing it into the
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 3
+
+
+ 101:CamConfig.c   **** 	cmd fifo.
+ 102:CamConfig.c   **** 	Inputs:  reg - the register to modify
+ 103:CamConfig.c   **** 	         val - the new value of the register
+ 104:CamConfig.c   **** 	Outputs: none
+ 105:CamConfig.c   **** ***********************************************************/	
+ 106:CamConfig.c   **** void CamConfig_setCamReg(unsigned char reg, unsigned char val)
+ 107:CamConfig.c   **** {
+ 108:CamConfig.c   **** 	i2cCmd_t cmd;
+ 109:CamConfig.c   **** 	
+ 110:CamConfig.c   **** 	cmd.configReg = reg;
+ 111:CamConfig.c   **** 	cmd.data = val;
+ 112:CamConfig.c   **** #ifndef SIMULATION	
+ 113:CamConfig.c   **** 	CamConfig_writeTxFifo(cmd);
+ 114:CamConfig.c   **** #endif	
+ 115:CamConfig.c   **** }
+ 116:CamConfig.c   **** /***********************************************************
+ 117:CamConfig.c   **** 	Function Name: CamConfig_sendFifoCmds
+ 118:CamConfig.c   **** 	Function Description: This function is responsible for
+ 119:CamConfig.c   **** 	sending the entire contents of the config fifo.  This
+ 120:CamConfig.c   **** 	function won't return until the configuration process
+ 121:CamConfig.c   **** 	is complete (or an error is encountered).
+ 122:CamConfig.c   **** 	Inputs:  none
+ 123:CamConfig.c   **** 	Outputs: none
+ 124:CamConfig.c   **** 	Note: Since this function is written to use the TWI
+ 125:CamConfig.c   **** 	interrupt in the I2CInterface module, there will be 
+ 126:CamConfig.c   **** 	some busy-waiting here...no big deal, since we end up
+ 127:CamConfig.c   **** 	having to trash the frame that we are executing this
+ 128:CamConfig.c   **** 	slave write in anyway (since we can't meet the strict
+ 129:CamConfig.c   **** 	timing requirements and write i2c at the same time).
+ 130:CamConfig.c   **** ***********************************************************/	
+ 131:CamConfig.c   **** void CamConfig_sendFifoCmds(void)
+ 132:CamConfig.c   **** {
+  15               		.loc 1 132 0
+  16               		.cfi_startproc
+  17 0000 CF93      		push r28
+  18               	.LCFI0:
+  19               		.cfi_def_cfa_offset 3
+  20               		.cfi_offset 28, -2
+  21 0002 DF93      		push r29
+  22               	.LCFI1:
+  23               		.cfi_def_cfa_offset 4
+  24               		.cfi_offset 29, -3
+  25 0004 00D0      		rcall .
+  26               	.LCFI2:
+  27               		.cfi_def_cfa_offset 6
+  28 0006 CDB7      		in r28,__SP_L__
+  29 0008 DEB7      		in r29,__SP_H__
+  30               	.LCFI3:
+  31               		.cfi_def_cfa_register 28
+  32               	/* prologue: function */
+  33               	/* frame size = 2 */
+  34               	/* stack size = 4 */
+  35               	.L__stack_usage = 4
+ 133:CamConfig.c   **** 	i2cCmd_t cmd;
+ 134:CamConfig.c   **** 	
+ 135:CamConfig.c   **** 	while (CamConfig_txFifoHead != CamConfig_txFifoTail)
+  36               		.loc 1 135 0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 4
+
+
+  37 000a 00C0      		rjmp .L2
+  38               	.L4:
+  39               	.LBB4:
+  40               	.LBB5:
+ 136:CamConfig.c   **** 	{
+ 137:CamConfig.c   **** 		cmd = CamConfig_readTxFifo();
+ 138:CamConfig.c   **** 		I2CInt_writeData(CAM_ADDRESS,&cmd.configReg,SIZE_OF_I2C_CMD);
+ 139:CamConfig.c   **** 		Utility_delay(100);		
+ 140:CamConfig.c   **** 		/* wait for the I2C transaction to complete */
+ 141:CamConfig.c   **** 		while(I2CInt_isI2cBusy() == TRUE);
+ 142:CamConfig.c   **** 	} 
+ 143:CamConfig.c   **** }
+ 144:CamConfig.c   **** 
+ 145:CamConfig.c   **** /***********************************************************
+ 146:CamConfig.c   **** 	Function Name: CamConfig_writeTxFifo
+ 147:CamConfig.c   **** 	Function Description: This function is responsible for
+ 148:CamConfig.c   **** 	adding a new command to the tx fifo.  It adjusts all
+ 149:CamConfig.c   **** 	needed pointers.
+ 150:CamConfig.c   **** 	Inputs:  cmd - the i2cCmd_t to add to the fifo
+ 151:CamConfig.c   **** 	Outputs: bool_t - indicating if writing to the fifo
+ 152:CamConfig.c   **** 	         causes it to wrap
+ 153:CamConfig.c   **** ***********************************************************/	
+ 154:CamConfig.c   **** bool_t CamConfig_writeTxFifo(i2cCmd_t cmd)
+ 155:CamConfig.c   **** {
+ 156:CamConfig.c   **** 	unsigned char tmpHead;
+ 157:CamConfig.c   **** 	bool_t retVal = TRUE;
+ 158:CamConfig.c   ****  	
+ 159:CamConfig.c   **** 	CamConfig_txFifo[CamConfig_txFifoHead] = cmd;
+ 160:CamConfig.c   **** 		
+ 161:CamConfig.c   **** 	/* see if we need to wrap */
+ 162:CamConfig.c   **** 	tmpHead = (CamConfig_txFifoHead+1) & (CAM_CONFIG_TX_FIFO_MASK);
+ 163:CamConfig.c   **** 	CamConfig_txFifoHead = tmpHead;
+ 164:CamConfig.c   **** 	
+ 165:CamConfig.c   **** 	/* check to see if we have filled up the queue */
+ 166:CamConfig.c   **** 	if (CamConfig_txFifoHead == CamConfig_txFifoTail)
+ 167:CamConfig.c   **** 	{
+ 168:CamConfig.c   **** 		/* we wrapped the fifo...return false */
+ 169:CamConfig.c   **** 		retVal = FALSE;
+ 170:CamConfig.c   **** 	}
+ 171:CamConfig.c   **** 	return(retVal);
+ 172:CamConfig.c   **** }
+ 173:CamConfig.c   **** 
+ 174:CamConfig.c   **** /***********************************************************
+ 175:CamConfig.c   **** 	Function Name: CamConfig_readTxFifo
+ 176:CamConfig.c   **** 	Function Description: This function is responsible for
+ 177:CamConfig.c   **** 	reading a cmd out of the tx fifo.
+ 178:CamConfig.c   **** 	Inputs:  none
+ 179:CamConfig.c   **** 	Outputs: i2cCmd_t - the cmd read from the fifo
+ 180:CamConfig.c   **** ***********************************************************/	
+ 181:CamConfig.c   **** static i2cCmd_t CamConfig_readTxFifo(void)
+ 182:CamConfig.c   **** {
+ 183:CamConfig.c   **** 	i2cCmd_t cmd;
+ 184:CamConfig.c   **** 	unsigned char tmpTail;
+ 185:CamConfig.c   **** 	
+ 186:CamConfig.c   **** 	/* just return the current tail from the rx fifo */
+ 187:CamConfig.c   **** 	cmd = CamConfig_txFifo[CamConfig_txFifoTail];	
+  41               		.loc 1 187 0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 5
+
+
+  42 000c E82F      		mov r30,r24
+  43 000e F0E0      		ldi r31,0
+  44 0010 EE0F      		lsl r30
+  45 0012 FF1F      		rol r31
+  46 0014 E050      		subi r30,lo8(-(CamConfig_txFifo))
+  47 0016 F040      		sbci r31,hi8(-(CamConfig_txFifo))
+  48 0018 2081      		ld r18,Z
+  49               	.LVL0:
+  50 001a 9181      		ldd r25,Z+1
+  51               	.LVL1:
+ 188:CamConfig.c   **** 	tmpTail = (CamConfig_txFifoTail+1) & (CAM_CONFIG_TX_FIFO_MASK);
+ 189:CamConfig.c   **** 	CamConfig_txFifoTail = tmpTail;
+  52               		.loc 1 189 0
+  53 001c 8F5F      		subi r24,lo8(-(1))
+  54               	.LVL2:
+  55 001e 8770      		andi r24,lo8(7)
+  56               	.LVL3:
+  57 0020 8093 0000 		sts CamConfig_txFifoTail,r24
+  58               	.LVL4:
+  59               	.LBE5:
+  60               	.LBE4:
+ 137:CamConfig.c   **** 		I2CInt_writeData(CAM_ADDRESS,&cmd.configReg,SIZE_OF_I2C_CMD);
+  61               		.loc 1 137 0
+  62 0024 2983      		std Y+1,r18
+  63 0026 9A83      		std Y+2,r25
+ 138:CamConfig.c   **** 		Utility_delay(100);		
+  64               		.loc 1 138 0
+  65 0028 42E0      		ldi r20,lo8(2)
+  66 002a BE01      		movw r22,r28
+  67 002c 6F5F      		subi r22,-1
+  68 002e 7F4F      		sbci r23,-1
+  69 0030 80E6      		ldi r24,lo8(96)
+  70 0032 00D0      		rcall I2CInt_writeData
+  71               	.LVL5:
+ 139:CamConfig.c   **** 		/* wait for the I2C transaction to complete */
+  72               		.loc 1 139 0
+  73 0034 84E6      		ldi r24,lo8(100)
+  74 0036 90E0      		ldi r25,0
+  75 0038 00D0      		rcall Utility_delay
+  76               	.LVL6:
+  77               	.L3:
+ 141:CamConfig.c   **** 	} 
+  78               		.loc 1 141 0 discriminator 1
+  79 003a 00D0      		rcall I2CInt_isI2cBusy
+  80               	.LVL7:
+  81 003c 8130      		cpi r24,lo8(1)
+  82 003e 01F0      		breq .L3
+  83               	.L2:
+ 135:CamConfig.c   **** 	{
+  84               		.loc 1 135 0
+  85 0040 8091 0000 		lds r24,CamConfig_txFifoTail
+  86 0044 9091 0000 		lds r25,CamConfig_txFifoHead
+  87 0048 9813      		cpse r25,r24
+  88 004a 00C0      		rjmp .L4
+  89               	/* epilogue start */
+ 143:CamConfig.c   **** 
+  90               		.loc 1 143 0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 6
+
+
+  91 004c 0F90      		pop __tmp_reg__
+  92 004e 0F90      		pop __tmp_reg__
+  93 0050 DF91      		pop r29
+  94 0052 CF91      		pop r28
+  95 0054 0895      		ret
+  96               		.cfi_endproc
+  97               	.LFE2:
+  98               		.size	CamConfig_sendFifoCmds, .-CamConfig_sendFifoCmds
+  99               	.global	CamConfig_writeTxFifo
+ 100               		.type	CamConfig_writeTxFifo, @function
+ 101               	CamConfig_writeTxFifo:
+ 102               	.LFB3:
+ 155:CamConfig.c   **** 	unsigned char tmpHead;
+ 103               		.loc 1 155 0
+ 104               		.cfi_startproc
+ 105               	.LVL8:
+ 106               	/* prologue: function */
+ 107               	/* frame size = 0 */
+ 108               	/* stack size = 0 */
+ 109               	.L__stack_usage = 0
+ 159:CamConfig.c   **** 		
+ 110               		.loc 1 159 0
+ 111 0056 2091 0000 		lds r18,CamConfig_txFifoHead
+ 112 005a E22F      		mov r30,r18
+ 113 005c F0E0      		ldi r31,0
+ 114 005e EE0F      		lsl r30
+ 115 0060 FF1F      		rol r31
+ 116 0062 E050      		subi r30,lo8(-(CamConfig_txFifo))
+ 117 0064 F040      		sbci r31,hi8(-(CamConfig_txFifo))
+ 118 0066 9183      		std Z+1,r25
+ 119 0068 8083      		st Z,r24
+ 162:CamConfig.c   **** 	CamConfig_txFifoHead = tmpHead;
+ 120               		.loc 1 162 0
+ 121 006a 2F5F      		subi r18,lo8(-(1))
+ 122 006c 2770      		andi r18,lo8(7)
+ 123               	.LVL9:
+ 163:CamConfig.c   **** 	
+ 124               		.loc 1 163 0
+ 125 006e 2093 0000 		sts CamConfig_txFifoHead,r18
+ 126               	.LVL10:
+ 171:CamConfig.c   **** }
+ 127               		.loc 1 171 0
+ 128 0072 81E0      		ldi r24,lo8(1)
+ 129               	.LVL11:
+ 130 0074 9091 0000 		lds r25,CamConfig_txFifoTail
+ 131 0078 9213      		cpse r25,r18
+ 132 007a 00C0      		rjmp .L7
+ 133 007c 80E0      		ldi r24,0
+ 134               	.L7:
+ 172:CamConfig.c   **** 
+ 135               		.loc 1 172 0
+ 136 007e 0895      		ret
+ 137               		.cfi_endproc
+ 138               	.LFE3:
+ 139               		.size	CamConfig_writeTxFifo, .-CamConfig_writeTxFifo
+ 140               	.global	CamConfig_setCamReg
+ 141               		.type	CamConfig_setCamReg, @function
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 7
+
+
+ 142               	CamConfig_setCamReg:
+ 143               	.LFB1:
+ 107:CamConfig.c   **** 	i2cCmd_t cmd;
+ 144               		.loc 1 107 0
+ 145               		.cfi_startproc
+ 146               	.LVL12:
+ 147               	/* prologue: function */
+ 148               	/* frame size = 0 */
+ 149               	/* stack size = 0 */
+ 150               	.L__stack_usage = 0
+ 151 0080 962F      		mov r25,r22
+ 113:CamConfig.c   **** #endif	
+ 152               		.loc 1 113 0
+ 153 0082 00D0      		rcall CamConfig_writeTxFifo
+ 154               	.LVL13:
+ 155 0084 0895      		ret
+ 156               		.cfi_endproc
+ 157               	.LFE1:
+ 158               		.size	CamConfig_setCamReg, .-CamConfig_setCamReg
+ 159               	.global	CamConfig_init
+ 160               		.type	CamConfig_init, @function
+ 161               	CamConfig_init:
+ 162               	.LFB0:
+  85:CamConfig.c   **** 	CamConfig_setCamReg(0x14,0x20);  /* reduce frame size */
+ 163               		.loc 1 85 0
+ 164               		.cfi_startproc
+ 165               	/* prologue: function */
+ 166               	/* frame size = 0 */
+ 167               	/* stack size = 0 */
+ 168               	.L__stack_usage = 0
+  86:CamConfig.c   **** 	CamConfig_setCamReg(0x39,0x40);  /* gate PCLK with HREF */
+ 169               		.loc 1 86 0
+ 170 0086 60E2      		ldi r22,lo8(32)
+ 171 0088 84E1      		ldi r24,lo8(20)
+ 172 008a 00D0      		rcall CamConfig_setCamReg
+ 173               	.LVL14:
+  87:CamConfig.c   **** 	CamConfig_setCamReg(0x12,0x28);  /* set RGB mode, with no AWB */
+ 174               		.loc 1 87 0
+ 175 008c 60E4      		ldi r22,lo8(64)
+ 176 008e 89E3      		ldi r24,lo8(57)
+ 177 0090 00D0      		rcall CamConfig_setCamReg
+ 178               	.LVL15:
+  88:CamConfig.c   **** 	CamConfig_setCamReg(0x28,0x05);  /* set color sequencer */
+ 179               		.loc 1 88 0
+ 180 0092 68E2      		ldi r22,lo8(40)
+ 181 0094 82E1      		ldi r24,lo8(18)
+ 182 0096 00D0      		rcall CamConfig_setCamReg
+ 183               	.LVL16:
+  89:CamConfig.c   ****     CamConfig_setCamReg(0x13,0x01);  /* un-tri-state the Y/UV lines */
+ 184               		.loc 1 89 0
+ 185 0098 65E0      		ldi r22,lo8(5)
+ 186 009a 88E2      		ldi r24,lo8(40)
+ 187 009c 00D0      		rcall CamConfig_setCamReg
+ 188               	.LVL17:
+  90:CamConfig.c   **** 	
+ 189               		.loc 1 90 0
+ 190 009e 61E0      		ldi r22,lo8(1)
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 8
+
+
+ 191 00a0 83E1      		ldi r24,lo8(19)
+ 192 00a2 00D0      		rcall CamConfig_setCamReg
+ 193               	.LVL18:
+  93:CamConfig.c   **** }
+ 194               		.loc 1 93 0
+ 195 00a4 00D0      		rcall CamConfig_sendFifoCmds
+ 196               	.LVL19:
+ 197 00a6 0895      		ret
+ 198               		.cfi_endproc
+ 199               	.LFE0:
+ 200               		.size	CamConfig_init, .-CamConfig_init
+ 201               	.global	CamConfig_txFifoTail
+ 202               		.section .bss
+ 203               		.type	CamConfig_txFifoTail, @object
+ 204               		.size	CamConfig_txFifoTail, 1
+ 205               	CamConfig_txFifoTail:
+ 206 0000 00        		.zero	1
+ 207               	.global	CamConfig_txFifoHead
+ 208               		.type	CamConfig_txFifoHead, @object
+ 209               		.size	CamConfig_txFifoHead, 1
+ 210               	CamConfig_txFifoHead:
+ 211 0001 00        		.zero	1
+ 212               		.comm	CamConfig_txFifo,16,1
+ 213               		.text
+ 214               	.Letext0:
+ 215               		.file 2 "I2CInterface.h"
+ 216               		.file 3 "CommonDefs.h"
+ 217               		.file 4 "Utility.h"
+ 218               		.section	.debug_info,"",@progbits
+ 219               	.Ldebug_info0:
+ 220 0000 0803 0000 		.long	0x308
+ 221 0004 0200      		.word	0x2
+ 222 0006 0000 0000 		.long	.Ldebug_abbrev0
+ 223 000a 04        		.byte	0x4
+ 224 000b 01        		.uleb128 0x1
+ 225 000c 0000 0000 		.long	.LASF24
+ 226 0010 0C        		.byte	0xc
+ 227 0011 0000 0000 		.long	.LASF25
+ 228 0015 0000 0000 		.long	.LASF26
+ 229 0019 0000 0000 		.long	.Ltext0
+ 230 001d 0000 0000 		.long	.Letext0
+ 231 0021 0000 0000 		.long	.Ldebug_line0
+ 232 0025 02        		.uleb128 0x2
+ 233 0026 01        		.byte	0x1
+ 234 0027 06        		.byte	0x6
+ 235 0028 0000 0000 		.long	.LASF0
+ 236 002c 02        		.uleb128 0x2
+ 237 002d 01        		.byte	0x1
+ 238 002e 08        		.byte	0x8
+ 239 002f 0000 0000 		.long	.LASF1
+ 240 0033 03        		.uleb128 0x3
+ 241 0034 02        		.byte	0x2
+ 242 0035 05        		.byte	0x5
+ 243 0036 696E 7400 		.string	"int"
+ 244 003a 02        		.uleb128 0x2
+ 245 003b 02        		.byte	0x2
+ 246 003c 07        		.byte	0x7
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 9
+
+
+ 247 003d 0000 0000 		.long	.LASF2
+ 248 0041 02        		.uleb128 0x2
+ 249 0042 04        		.byte	0x4
+ 250 0043 05        		.byte	0x5
+ 251 0044 0000 0000 		.long	.LASF3
+ 252 0048 02        		.uleb128 0x2
+ 253 0049 04        		.byte	0x4
+ 254 004a 07        		.byte	0x7
+ 255 004b 0000 0000 		.long	.LASF4
+ 256 004f 02        		.uleb128 0x2
+ 257 0050 08        		.byte	0x8
+ 258 0051 05        		.byte	0x5
+ 259 0052 0000 0000 		.long	.LASF5
+ 260 0056 02        		.uleb128 0x2
+ 261 0057 08        		.byte	0x8
+ 262 0058 07        		.byte	0x7
+ 263 0059 0000 0000 		.long	.LASF6
+ 264 005d 04        		.uleb128 0x4
+ 265 005e 0000 0000 		.long	.LASF9
+ 266 0062 03        		.byte	0x3
+ 267 0063 38        		.byte	0x38
+ 268 0064 2C00 0000 		.long	0x2c
+ 269 0068 05        		.uleb128 0x5
+ 270 0069 02        		.byte	0x2
+ 271 006a 02        		.byte	0x2
+ 272 006b 31        		.byte	0x31
+ 273 006c 8D00 0000 		.long	0x8d
+ 274 0070 06        		.uleb128 0x6
+ 275 0071 0000 0000 		.long	.LASF7
+ 276 0075 02        		.byte	0x2
+ 277 0076 33        		.byte	0x33
+ 278 0077 2C00 0000 		.long	0x2c
+ 279 007b 02        		.byte	0x2
+ 280 007c 23        		.byte	0x23
+ 281 007d 00        		.uleb128 0
+ 282 007e 06        		.uleb128 0x6
+ 283 007f 0000 0000 		.long	.LASF8
+ 284 0083 02        		.byte	0x2
+ 285 0084 34        		.byte	0x34
+ 286 0085 2C00 0000 		.long	0x2c
+ 287 0089 02        		.byte	0x2
+ 288 008a 23        		.byte	0x23
+ 289 008b 01        		.uleb128 0x1
+ 290 008c 00        		.byte	0
+ 291 008d 04        		.uleb128 0x4
+ 292 008e 0000 0000 		.long	.LASF10
+ 293 0092 02        		.byte	0x2
+ 294 0093 35        		.byte	0x35
+ 295 0094 6800 0000 		.long	0x68
+ 296 0098 07        		.uleb128 0x7
+ 297 0099 0000 0000 		.long	.LASF27
+ 298 009d 01        		.byte	0x1
+ 299 009e B5        		.byte	0xb5
+ 300 009f 01        		.byte	0x1
+ 301 00a0 8D00 0000 		.long	0x8d
+ 302 00a4 01        		.byte	0x1
+ 303 00a5 C000 0000 		.long	0xc0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 10
+
+
+ 304 00a9 08        		.uleb128 0x8
+ 305 00aa 636D 6400 		.string	"cmd"
+ 306 00ae 01        		.byte	0x1
+ 307 00af B7        		.byte	0xb7
+ 308 00b0 8D00 0000 		.long	0x8d
+ 309 00b4 09        		.uleb128 0x9
+ 310 00b5 0000 0000 		.long	.LASF11
+ 311 00b9 01        		.byte	0x1
+ 312 00ba B8        		.byte	0xb8
+ 313 00bb 2C00 0000 		.long	0x2c
+ 314 00bf 00        		.byte	0
+ 315 00c0 0A        		.uleb128 0xa
+ 316 00c1 01        		.byte	0x1
+ 317 00c2 0000 0000 		.long	.LASF14
+ 318 00c6 01        		.byte	0x1
+ 319 00c7 83        		.byte	0x83
+ 320 00c8 01        		.byte	0x1
+ 321 00c9 0000 0000 		.long	.LFB2
+ 322 00cd 0000 0000 		.long	.LFE2
+ 323 00d1 0000 0000 		.long	.LLST0
+ 324 00d5 01        		.byte	0x1
+ 325 00d6 5F01 0000 		.long	0x15f
+ 326 00da 0B        		.uleb128 0xb
+ 327 00db 636D 6400 		.string	"cmd"
+ 328 00df 01        		.byte	0x1
+ 329 00e0 85        		.byte	0x85
+ 330 00e1 8D00 0000 		.long	0x8d
+ 331 00e5 02        		.byte	0x2
+ 332 00e6 8C        		.byte	0x8c
+ 333 00e7 01        		.sleb128 1
+ 334 00e8 0C        		.uleb128 0xc
+ 335 00e9 9800 0000 		.long	0x98
+ 336 00ed 0000 0000 		.long	.LBB4
+ 337 00f1 0000 0000 		.long	.LBE4
+ 338 00f5 01        		.byte	0x1
+ 339 00f6 89        		.byte	0x89
+ 340 00f7 1801 0000 		.long	0x118
+ 341 00fb 0D        		.uleb128 0xd
+ 342 00fc 0000 0000 		.long	.LBB5
+ 343 0100 0000 0000 		.long	.LBE5
+ 344 0104 0E        		.uleb128 0xe
+ 345 0105 A900 0000 		.long	0xa9
+ 346 0109 0000 0000 		.long	.LLST1
+ 347 010d 0E        		.uleb128 0xe
+ 348 010e B400 0000 		.long	0xb4
+ 349 0112 0000 0000 		.long	.LLST2
+ 350 0116 00        		.byte	0
+ 351 0117 00        		.byte	0
+ 352 0118 0F        		.uleb128 0xf
+ 353 0119 0000 0000 		.long	.LVL5
+ 354 011d E402 0000 		.long	0x2e4
+ 355 0121 3C01 0000 		.long	0x13c
+ 356 0125 10        		.uleb128 0x10
+ 357 0126 01        		.byte	0x1
+ 358 0127 68        		.byte	0x68
+ 359 0128 02        		.byte	0x2
+ 360 0129 08        		.byte	0x8
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 11
+
+
+ 361 012a 60        		.byte	0x60
+ 362 012b 10        		.uleb128 0x10
+ 363 012c 06        		.byte	0x6
+ 364 012d 66        		.byte	0x66
+ 365 012e 93        		.byte	0x93
+ 366 012f 01        		.uleb128 0x1
+ 367 0130 67        		.byte	0x67
+ 368 0131 93        		.byte	0x93
+ 369 0132 01        		.uleb128 0x1
+ 370 0133 02        		.byte	0x2
+ 371 0134 8C        		.byte	0x8c
+ 372 0135 01        		.sleb128 1
+ 373 0136 10        		.uleb128 0x10
+ 374 0137 01        		.byte	0x1
+ 375 0138 64        		.byte	0x64
+ 376 0139 01        		.byte	0x1
+ 377 013a 32        		.byte	0x32
+ 378 013b 00        		.byte	0
+ 379 013c 0F        		.uleb128 0xf
+ 380 013d 0000 0000 		.long	.LVL6
+ 381 0141 F102 0000 		.long	0x2f1
+ 382 0145 5501 0000 		.long	0x155
+ 383 0149 10        		.uleb128 0x10
+ 384 014a 06        		.byte	0x6
+ 385 014b 68        		.byte	0x68
+ 386 014c 93        		.byte	0x93
+ 387 014d 01        		.uleb128 0x1
+ 388 014e 69        		.byte	0x69
+ 389 014f 93        		.byte	0x93
+ 390 0150 01        		.uleb128 0x1
+ 391 0151 02        		.byte	0x2
+ 392 0152 08        		.byte	0x8
+ 393 0153 64        		.byte	0x64
+ 394 0154 00        		.byte	0
+ 395 0155 11        		.uleb128 0x11
+ 396 0156 0000 0000 		.long	.LVL7
+ 397 015a FE02 0000 		.long	0x2fe
+ 398 015e 00        		.byte	0
+ 399 015f 12        		.uleb128 0x12
+ 400 0160 01        		.byte	0x1
+ 401 0161 0000 0000 		.long	.LASF28
+ 402 0165 01        		.byte	0x1
+ 403 0166 9A        		.byte	0x9a
+ 404 0167 01        		.byte	0x1
+ 405 0168 5D00 0000 		.long	0x5d
+ 406 016c 0000 0000 		.long	.LFB3
+ 407 0170 0000 0000 		.long	.LFE3
+ 408 0174 03        		.byte	0x3
+ 409 0175 92        		.byte	0x92
+ 410 0176 20        		.uleb128 0x20
+ 411 0177 02        		.sleb128 2
+ 412 0178 01        		.byte	0x1
+ 413 0179 A901 0000 		.long	0x1a9
+ 414 017d 13        		.uleb128 0x13
+ 415 017e 636D 6400 		.string	"cmd"
+ 416 0182 01        		.byte	0x1
+ 417 0183 9A        		.byte	0x9a
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 12
+
+
+ 418 0184 8D00 0000 		.long	0x8d
+ 419 0188 0000 0000 		.long	.LLST3
+ 420 018c 14        		.uleb128 0x14
+ 421 018d 0000 0000 		.long	.LASF12
+ 422 0191 01        		.byte	0x1
+ 423 0192 9C        		.byte	0x9c
+ 424 0193 2C00 0000 		.long	0x2c
+ 425 0197 01        		.byte	0x1
+ 426 0198 62        		.byte	0x62
+ 427 0199 15        		.uleb128 0x15
+ 428 019a 0000 0000 		.long	.LASF13
+ 429 019e 01        		.byte	0x1
+ 430 019f 9D        		.byte	0x9d
+ 431 01a0 5D00 0000 		.long	0x5d
+ 432 01a4 0000 0000 		.long	.LLST4
+ 433 01a8 00        		.byte	0
+ 434 01a9 16        		.uleb128 0x16
+ 435 01aa 01        		.byte	0x1
+ 436 01ab 0000 0000 		.long	.LASF15
+ 437 01af 01        		.byte	0x1
+ 438 01b0 6A        		.byte	0x6a
+ 439 01b1 01        		.byte	0x1
+ 440 01b2 0000 0000 		.long	.LFB1
+ 441 01b6 0000 0000 		.long	.LFE1
+ 442 01ba 03        		.byte	0x3
+ 443 01bb 92        		.byte	0x92
+ 444 01bc 20        		.uleb128 0x20
+ 445 01bd 02        		.sleb128 2
+ 446 01be 01        		.byte	0x1
+ 447 01bf F601 0000 		.long	0x1f6
+ 448 01c3 13        		.uleb128 0x13
+ 449 01c4 7265 6700 		.string	"reg"
+ 450 01c8 01        		.byte	0x1
+ 451 01c9 6A        		.byte	0x6a
+ 452 01ca 2C00 0000 		.long	0x2c
+ 453 01ce 0000 0000 		.long	.LLST5
+ 454 01d2 13        		.uleb128 0x13
+ 455 01d3 7661 6C00 		.string	"val"
+ 456 01d7 01        		.byte	0x1
+ 457 01d8 6A        		.byte	0x6a
+ 458 01d9 2C00 0000 		.long	0x2c
+ 459 01dd 0000 0000 		.long	.LLST6
+ 460 01e1 08        		.uleb128 0x8
+ 461 01e2 636D 6400 		.string	"cmd"
+ 462 01e6 01        		.byte	0x1
+ 463 01e7 6C        		.byte	0x6c
+ 464 01e8 8D00 0000 		.long	0x8d
+ 465 01ec 11        		.uleb128 0x11
+ 466 01ed 0000 0000 		.long	.LVL13
+ 467 01f1 5F01 0000 		.long	0x15f
+ 468 01f5 00        		.byte	0
+ 469 01f6 16        		.uleb128 0x16
+ 470 01f7 01        		.byte	0x1
+ 471 01f8 0000 0000 		.long	.LASF16
+ 472 01fc 01        		.byte	0x1
+ 473 01fd 54        		.byte	0x54
+ 474 01fe 01        		.byte	0x1
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 13
+
+
+ 475 01ff 0000 0000 		.long	.LFB0
+ 476 0203 0000 0000 		.long	.LFE0
+ 477 0207 03        		.byte	0x3
+ 478 0208 92        		.byte	0x92
+ 479 0209 20        		.uleb128 0x20
+ 480 020a 02        		.sleb128 2
+ 481 020b 01        		.byte	0x1
+ 482 020c 9702 0000 		.long	0x297
+ 483 0210 0F        		.uleb128 0xf
+ 484 0211 0000 0000 		.long	.LVL14
+ 485 0215 A901 0000 		.long	0x1a9
+ 486 0219 2902 0000 		.long	0x229
+ 487 021d 10        		.uleb128 0x10
+ 488 021e 01        		.byte	0x1
+ 489 021f 68        		.byte	0x68
+ 490 0220 01        		.byte	0x1
+ 491 0221 44        		.byte	0x44
+ 492 0222 10        		.uleb128 0x10
+ 493 0223 01        		.byte	0x1
+ 494 0224 66        		.byte	0x66
+ 495 0225 02        		.byte	0x2
+ 496 0226 08        		.byte	0x8
+ 497 0227 20        		.byte	0x20
+ 498 0228 00        		.byte	0
+ 499 0229 0F        		.uleb128 0xf
+ 500 022a 0000 0000 		.long	.LVL15
+ 501 022e A901 0000 		.long	0x1a9
+ 502 0232 4302 0000 		.long	0x243
+ 503 0236 10        		.uleb128 0x10
+ 504 0237 01        		.byte	0x1
+ 505 0238 68        		.byte	0x68
+ 506 0239 02        		.byte	0x2
+ 507 023a 08        		.byte	0x8
+ 508 023b 39        		.byte	0x39
+ 509 023c 10        		.uleb128 0x10
+ 510 023d 01        		.byte	0x1
+ 511 023e 66        		.byte	0x66
+ 512 023f 02        		.byte	0x2
+ 513 0240 08        		.byte	0x8
+ 514 0241 40        		.byte	0x40
+ 515 0242 00        		.byte	0
+ 516 0243 0F        		.uleb128 0xf
+ 517 0244 0000 0000 		.long	.LVL16
+ 518 0248 A901 0000 		.long	0x1a9
+ 519 024c 5C02 0000 		.long	0x25c
+ 520 0250 10        		.uleb128 0x10
+ 521 0251 01        		.byte	0x1
+ 522 0252 68        		.byte	0x68
+ 523 0253 01        		.byte	0x1
+ 524 0254 42        		.byte	0x42
+ 525 0255 10        		.uleb128 0x10
+ 526 0256 01        		.byte	0x1
+ 527 0257 66        		.byte	0x66
+ 528 0258 02        		.byte	0x2
+ 529 0259 08        		.byte	0x8
+ 530 025a 28        		.byte	0x28
+ 531 025b 00        		.byte	0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 14
+
+
+ 532 025c 0F        		.uleb128 0xf
+ 533 025d 0000 0000 		.long	.LVL17
+ 534 0261 A901 0000 		.long	0x1a9
+ 535 0265 7502 0000 		.long	0x275
+ 536 0269 10        		.uleb128 0x10
+ 537 026a 01        		.byte	0x1
+ 538 026b 68        		.byte	0x68
+ 539 026c 02        		.byte	0x2
+ 540 026d 08        		.byte	0x8
+ 541 026e 28        		.byte	0x28
+ 542 026f 10        		.uleb128 0x10
+ 543 0270 01        		.byte	0x1
+ 544 0271 66        		.byte	0x66
+ 545 0272 01        		.byte	0x1
+ 546 0273 35        		.byte	0x35
+ 547 0274 00        		.byte	0
+ 548 0275 0F        		.uleb128 0xf
+ 549 0276 0000 0000 		.long	.LVL18
+ 550 027a A901 0000 		.long	0x1a9
+ 551 027e 8D02 0000 		.long	0x28d
+ 552 0282 10        		.uleb128 0x10
+ 553 0283 01        		.byte	0x1
+ 554 0284 68        		.byte	0x68
+ 555 0285 01        		.byte	0x1
+ 556 0286 43        		.byte	0x43
+ 557 0287 10        		.uleb128 0x10
+ 558 0288 01        		.byte	0x1
+ 559 0289 66        		.byte	0x66
+ 560 028a 01        		.byte	0x1
+ 561 028b 31        		.byte	0x31
+ 562 028c 00        		.byte	0
+ 563 028d 11        		.uleb128 0x11
+ 564 028e 0000 0000 		.long	.LVL19
+ 565 0292 C000 0000 		.long	0xc0
+ 566 0296 00        		.byte	0
+ 567 0297 17        		.uleb128 0x17
+ 568 0298 8D00 0000 		.long	0x8d
+ 569 029c A702 0000 		.long	0x2a7
+ 570 02a0 18        		.uleb128 0x18
+ 571 02a1 A702 0000 		.long	0x2a7
+ 572 02a5 07        		.byte	0x7
+ 573 02a6 00        		.byte	0
+ 574 02a7 02        		.uleb128 0x2
+ 575 02a8 02        		.byte	0x2
+ 576 02a9 07        		.byte	0x7
+ 577 02aa 0000 0000 		.long	.LASF17
+ 578 02ae 19        		.uleb128 0x19
+ 579 02af 0000 0000 		.long	.LASF18
+ 580 02b3 01        		.byte	0x1
+ 581 02b4 49        		.byte	0x49
+ 582 02b5 9702 0000 		.long	0x297
+ 583 02b9 01        		.byte	0x1
+ 584 02ba 05        		.byte	0x5
+ 585 02bb 03        		.byte	0x3
+ 586 02bc 0000 0000 		.long	CamConfig_txFifo
+ 587 02c0 19        		.uleb128 0x19
+ 588 02c1 0000 0000 		.long	.LASF19
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 15
+
+
+ 589 02c5 01        		.byte	0x1
+ 590 02c6 4A        		.byte	0x4a
+ 591 02c7 2C00 0000 		.long	0x2c
+ 592 02cb 01        		.byte	0x1
+ 593 02cc 05        		.byte	0x5
+ 594 02cd 03        		.byte	0x3
+ 595 02ce 0000 0000 		.long	CamConfig_txFifoHead
+ 596 02d2 19        		.uleb128 0x19
+ 597 02d3 0000 0000 		.long	.LASF20
+ 598 02d7 01        		.byte	0x1
+ 599 02d8 4B        		.byte	0x4b
+ 600 02d9 2C00 0000 		.long	0x2c
+ 601 02dd 01        		.byte	0x1
+ 602 02de 05        		.byte	0x5
+ 603 02df 03        		.byte	0x3
+ 604 02e0 0000 0000 		.long	CamConfig_txFifoTail
+ 605 02e4 1A        		.uleb128 0x1a
+ 606 02e5 01        		.byte	0x1
+ 607 02e6 01        		.byte	0x1
+ 608 02e7 0000 0000 		.long	.LASF21
+ 609 02eb 0000 0000 		.long	.LASF21
+ 610 02ef 02        		.byte	0x2
+ 611 02f0 3F        		.byte	0x3f
+ 612 02f1 1A        		.uleb128 0x1a
+ 613 02f2 01        		.byte	0x1
+ 614 02f3 01        		.byte	0x1
+ 615 02f4 0000 0000 		.long	.LASF22
+ 616 02f8 0000 0000 		.long	.LASF22
+ 617 02fc 04        		.byte	0x4
+ 618 02fd 2D        		.byte	0x2d
+ 619 02fe 1A        		.uleb128 0x1a
+ 620 02ff 01        		.byte	0x1
+ 621 0300 01        		.byte	0x1
+ 622 0301 0000 0000 		.long	.LASF23
+ 623 0305 0000 0000 		.long	.LASF23
+ 624 0309 02        		.byte	0x2
+ 625 030a 41        		.byte	0x41
+ 626 030b 00        		.byte	0
+ 627               		.section	.debug_abbrev,"",@progbits
+ 628               	.Ldebug_abbrev0:
+ 629 0000 01        		.uleb128 0x1
+ 630 0001 11        		.uleb128 0x11
+ 631 0002 01        		.byte	0x1
+ 632 0003 25        		.uleb128 0x25
+ 633 0004 0E        		.uleb128 0xe
+ 634 0005 13        		.uleb128 0x13
+ 635 0006 0B        		.uleb128 0xb
+ 636 0007 03        		.uleb128 0x3
+ 637 0008 0E        		.uleb128 0xe
+ 638 0009 1B        		.uleb128 0x1b
+ 639 000a 0E        		.uleb128 0xe
+ 640 000b 11        		.uleb128 0x11
+ 641 000c 01        		.uleb128 0x1
+ 642 000d 12        		.uleb128 0x12
+ 643 000e 01        		.uleb128 0x1
+ 644 000f 10        		.uleb128 0x10
+ 645 0010 06        		.uleb128 0x6
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 16
+
+
+ 646 0011 00        		.byte	0
+ 647 0012 00        		.byte	0
+ 648 0013 02        		.uleb128 0x2
+ 649 0014 24        		.uleb128 0x24
+ 650 0015 00        		.byte	0
+ 651 0016 0B        		.uleb128 0xb
+ 652 0017 0B        		.uleb128 0xb
+ 653 0018 3E        		.uleb128 0x3e
+ 654 0019 0B        		.uleb128 0xb
+ 655 001a 03        		.uleb128 0x3
+ 656 001b 0E        		.uleb128 0xe
+ 657 001c 00        		.byte	0
+ 658 001d 00        		.byte	0
+ 659 001e 03        		.uleb128 0x3
+ 660 001f 24        		.uleb128 0x24
+ 661 0020 00        		.byte	0
+ 662 0021 0B        		.uleb128 0xb
+ 663 0022 0B        		.uleb128 0xb
+ 664 0023 3E        		.uleb128 0x3e
+ 665 0024 0B        		.uleb128 0xb
+ 666 0025 03        		.uleb128 0x3
+ 667 0026 08        		.uleb128 0x8
+ 668 0027 00        		.byte	0
+ 669 0028 00        		.byte	0
+ 670 0029 04        		.uleb128 0x4
+ 671 002a 16        		.uleb128 0x16
+ 672 002b 00        		.byte	0
+ 673 002c 03        		.uleb128 0x3
+ 674 002d 0E        		.uleb128 0xe
+ 675 002e 3A        		.uleb128 0x3a
+ 676 002f 0B        		.uleb128 0xb
+ 677 0030 3B        		.uleb128 0x3b
+ 678 0031 0B        		.uleb128 0xb
+ 679 0032 49        		.uleb128 0x49
+ 680 0033 13        		.uleb128 0x13
+ 681 0034 00        		.byte	0
+ 682 0035 00        		.byte	0
+ 683 0036 05        		.uleb128 0x5
+ 684 0037 13        		.uleb128 0x13
+ 685 0038 01        		.byte	0x1
+ 686 0039 0B        		.uleb128 0xb
+ 687 003a 0B        		.uleb128 0xb
+ 688 003b 3A        		.uleb128 0x3a
+ 689 003c 0B        		.uleb128 0xb
+ 690 003d 3B        		.uleb128 0x3b
+ 691 003e 0B        		.uleb128 0xb
+ 692 003f 01        		.uleb128 0x1
+ 693 0040 13        		.uleb128 0x13
+ 694 0041 00        		.byte	0
+ 695 0042 00        		.byte	0
+ 696 0043 06        		.uleb128 0x6
+ 697 0044 0D        		.uleb128 0xd
+ 698 0045 00        		.byte	0
+ 699 0046 03        		.uleb128 0x3
+ 700 0047 0E        		.uleb128 0xe
+ 701 0048 3A        		.uleb128 0x3a
+ 702 0049 0B        		.uleb128 0xb
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 17
+
+
+ 703 004a 3B        		.uleb128 0x3b
+ 704 004b 0B        		.uleb128 0xb
+ 705 004c 49        		.uleb128 0x49
+ 706 004d 13        		.uleb128 0x13
+ 707 004e 38        		.uleb128 0x38
+ 708 004f 0A        		.uleb128 0xa
+ 709 0050 00        		.byte	0
+ 710 0051 00        		.byte	0
+ 711 0052 07        		.uleb128 0x7
+ 712 0053 2E        		.uleb128 0x2e
+ 713 0054 01        		.byte	0x1
+ 714 0055 03        		.uleb128 0x3
+ 715 0056 0E        		.uleb128 0xe
+ 716 0057 3A        		.uleb128 0x3a
+ 717 0058 0B        		.uleb128 0xb
+ 718 0059 3B        		.uleb128 0x3b
+ 719 005a 0B        		.uleb128 0xb
+ 720 005b 27        		.uleb128 0x27
+ 721 005c 0C        		.uleb128 0xc
+ 722 005d 49        		.uleb128 0x49
+ 723 005e 13        		.uleb128 0x13
+ 724 005f 20        		.uleb128 0x20
+ 725 0060 0B        		.uleb128 0xb
+ 726 0061 01        		.uleb128 0x1
+ 727 0062 13        		.uleb128 0x13
+ 728 0063 00        		.byte	0
+ 729 0064 00        		.byte	0
+ 730 0065 08        		.uleb128 0x8
+ 731 0066 34        		.uleb128 0x34
+ 732 0067 00        		.byte	0
+ 733 0068 03        		.uleb128 0x3
+ 734 0069 08        		.uleb128 0x8
+ 735 006a 3A        		.uleb128 0x3a
+ 736 006b 0B        		.uleb128 0xb
+ 737 006c 3B        		.uleb128 0x3b
+ 738 006d 0B        		.uleb128 0xb
+ 739 006e 49        		.uleb128 0x49
+ 740 006f 13        		.uleb128 0x13
+ 741 0070 00        		.byte	0
+ 742 0071 00        		.byte	0
+ 743 0072 09        		.uleb128 0x9
+ 744 0073 34        		.uleb128 0x34
+ 745 0074 00        		.byte	0
+ 746 0075 03        		.uleb128 0x3
+ 747 0076 0E        		.uleb128 0xe
+ 748 0077 3A        		.uleb128 0x3a
+ 749 0078 0B        		.uleb128 0xb
+ 750 0079 3B        		.uleb128 0x3b
+ 751 007a 0B        		.uleb128 0xb
+ 752 007b 49        		.uleb128 0x49
+ 753 007c 13        		.uleb128 0x13
+ 754 007d 00        		.byte	0
+ 755 007e 00        		.byte	0
+ 756 007f 0A        		.uleb128 0xa
+ 757 0080 2E        		.uleb128 0x2e
+ 758 0081 01        		.byte	0x1
+ 759 0082 3F        		.uleb128 0x3f
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 18
+
+
+ 760 0083 0C        		.uleb128 0xc
+ 761 0084 03        		.uleb128 0x3
+ 762 0085 0E        		.uleb128 0xe
+ 763 0086 3A        		.uleb128 0x3a
+ 764 0087 0B        		.uleb128 0xb
+ 765 0088 3B        		.uleb128 0x3b
+ 766 0089 0B        		.uleb128 0xb
+ 767 008a 27        		.uleb128 0x27
+ 768 008b 0C        		.uleb128 0xc
+ 769 008c 11        		.uleb128 0x11
+ 770 008d 01        		.uleb128 0x1
+ 771 008e 12        		.uleb128 0x12
+ 772 008f 01        		.uleb128 0x1
+ 773 0090 40        		.uleb128 0x40
+ 774 0091 06        		.uleb128 0x6
+ 775 0092 9742      		.uleb128 0x2117
+ 776 0094 0C        		.uleb128 0xc
+ 777 0095 01        		.uleb128 0x1
+ 778 0096 13        		.uleb128 0x13
+ 779 0097 00        		.byte	0
+ 780 0098 00        		.byte	0
+ 781 0099 0B        		.uleb128 0xb
+ 782 009a 34        		.uleb128 0x34
+ 783 009b 00        		.byte	0
+ 784 009c 03        		.uleb128 0x3
+ 785 009d 08        		.uleb128 0x8
+ 786 009e 3A        		.uleb128 0x3a
+ 787 009f 0B        		.uleb128 0xb
+ 788 00a0 3B        		.uleb128 0x3b
+ 789 00a1 0B        		.uleb128 0xb
+ 790 00a2 49        		.uleb128 0x49
+ 791 00a3 13        		.uleb128 0x13
+ 792 00a4 02        		.uleb128 0x2
+ 793 00a5 0A        		.uleb128 0xa
+ 794 00a6 00        		.byte	0
+ 795 00a7 00        		.byte	0
+ 796 00a8 0C        		.uleb128 0xc
+ 797 00a9 1D        		.uleb128 0x1d
+ 798 00aa 01        		.byte	0x1
+ 799 00ab 31        		.uleb128 0x31
+ 800 00ac 13        		.uleb128 0x13
+ 801 00ad 11        		.uleb128 0x11
+ 802 00ae 01        		.uleb128 0x1
+ 803 00af 12        		.uleb128 0x12
+ 804 00b0 01        		.uleb128 0x1
+ 805 00b1 58        		.uleb128 0x58
+ 806 00b2 0B        		.uleb128 0xb
+ 807 00b3 59        		.uleb128 0x59
+ 808 00b4 0B        		.uleb128 0xb
+ 809 00b5 01        		.uleb128 0x1
+ 810 00b6 13        		.uleb128 0x13
+ 811 00b7 00        		.byte	0
+ 812 00b8 00        		.byte	0
+ 813 00b9 0D        		.uleb128 0xd
+ 814 00ba 0B        		.uleb128 0xb
+ 815 00bb 01        		.byte	0x1
+ 816 00bc 11        		.uleb128 0x11
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 19
+
+
+ 817 00bd 01        		.uleb128 0x1
+ 818 00be 12        		.uleb128 0x12
+ 819 00bf 01        		.uleb128 0x1
+ 820 00c0 00        		.byte	0
+ 821 00c1 00        		.byte	0
+ 822 00c2 0E        		.uleb128 0xe
+ 823 00c3 34        		.uleb128 0x34
+ 824 00c4 00        		.byte	0
+ 825 00c5 31        		.uleb128 0x31
+ 826 00c6 13        		.uleb128 0x13
+ 827 00c7 02        		.uleb128 0x2
+ 828 00c8 06        		.uleb128 0x6
+ 829 00c9 00        		.byte	0
+ 830 00ca 00        		.byte	0
+ 831 00cb 0F        		.uleb128 0xf
+ 832 00cc 8982 01   		.uleb128 0x4109
+ 833 00cf 01        		.byte	0x1
+ 834 00d0 11        		.uleb128 0x11
+ 835 00d1 01        		.uleb128 0x1
+ 836 00d2 31        		.uleb128 0x31
+ 837 00d3 13        		.uleb128 0x13
+ 838 00d4 01        		.uleb128 0x1
+ 839 00d5 13        		.uleb128 0x13
+ 840 00d6 00        		.byte	0
+ 841 00d7 00        		.byte	0
+ 842 00d8 10        		.uleb128 0x10
+ 843 00d9 8A82 01   		.uleb128 0x410a
+ 844 00dc 00        		.byte	0
+ 845 00dd 02        		.uleb128 0x2
+ 846 00de 0A        		.uleb128 0xa
+ 847 00df 9142      		.uleb128 0x2111
+ 848 00e1 0A        		.uleb128 0xa
+ 849 00e2 00        		.byte	0
+ 850 00e3 00        		.byte	0
+ 851 00e4 11        		.uleb128 0x11
+ 852 00e5 8982 01   		.uleb128 0x4109
+ 853 00e8 00        		.byte	0
+ 854 00e9 11        		.uleb128 0x11
+ 855 00ea 01        		.uleb128 0x1
+ 856 00eb 31        		.uleb128 0x31
+ 857 00ec 13        		.uleb128 0x13
+ 858 00ed 00        		.byte	0
+ 859 00ee 00        		.byte	0
+ 860 00ef 12        		.uleb128 0x12
+ 861 00f0 2E        		.uleb128 0x2e
+ 862 00f1 01        		.byte	0x1
+ 863 00f2 3F        		.uleb128 0x3f
+ 864 00f3 0C        		.uleb128 0xc
+ 865 00f4 03        		.uleb128 0x3
+ 866 00f5 0E        		.uleb128 0xe
+ 867 00f6 3A        		.uleb128 0x3a
+ 868 00f7 0B        		.uleb128 0xb
+ 869 00f8 3B        		.uleb128 0x3b
+ 870 00f9 0B        		.uleb128 0xb
+ 871 00fa 27        		.uleb128 0x27
+ 872 00fb 0C        		.uleb128 0xc
+ 873 00fc 49        		.uleb128 0x49
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 20
+
+
+ 874 00fd 13        		.uleb128 0x13
+ 875 00fe 11        		.uleb128 0x11
+ 876 00ff 01        		.uleb128 0x1
+ 877 0100 12        		.uleb128 0x12
+ 878 0101 01        		.uleb128 0x1
+ 879 0102 40        		.uleb128 0x40
+ 880 0103 0A        		.uleb128 0xa
+ 881 0104 9742      		.uleb128 0x2117
+ 882 0106 0C        		.uleb128 0xc
+ 883 0107 01        		.uleb128 0x1
+ 884 0108 13        		.uleb128 0x13
+ 885 0109 00        		.byte	0
+ 886 010a 00        		.byte	0
+ 887 010b 13        		.uleb128 0x13
+ 888 010c 05        		.uleb128 0x5
+ 889 010d 00        		.byte	0
+ 890 010e 03        		.uleb128 0x3
+ 891 010f 08        		.uleb128 0x8
+ 892 0110 3A        		.uleb128 0x3a
+ 893 0111 0B        		.uleb128 0xb
+ 894 0112 3B        		.uleb128 0x3b
+ 895 0113 0B        		.uleb128 0xb
+ 896 0114 49        		.uleb128 0x49
+ 897 0115 13        		.uleb128 0x13
+ 898 0116 02        		.uleb128 0x2
+ 899 0117 06        		.uleb128 0x6
+ 900 0118 00        		.byte	0
+ 901 0119 00        		.byte	0
+ 902 011a 14        		.uleb128 0x14
+ 903 011b 34        		.uleb128 0x34
+ 904 011c 00        		.byte	0
+ 905 011d 03        		.uleb128 0x3
+ 906 011e 0E        		.uleb128 0xe
+ 907 011f 3A        		.uleb128 0x3a
+ 908 0120 0B        		.uleb128 0xb
+ 909 0121 3B        		.uleb128 0x3b
+ 910 0122 0B        		.uleb128 0xb
+ 911 0123 49        		.uleb128 0x49
+ 912 0124 13        		.uleb128 0x13
+ 913 0125 02        		.uleb128 0x2
+ 914 0126 0A        		.uleb128 0xa
+ 915 0127 00        		.byte	0
+ 916 0128 00        		.byte	0
+ 917 0129 15        		.uleb128 0x15
+ 918 012a 34        		.uleb128 0x34
+ 919 012b 00        		.byte	0
+ 920 012c 03        		.uleb128 0x3
+ 921 012d 0E        		.uleb128 0xe
+ 922 012e 3A        		.uleb128 0x3a
+ 923 012f 0B        		.uleb128 0xb
+ 924 0130 3B        		.uleb128 0x3b
+ 925 0131 0B        		.uleb128 0xb
+ 926 0132 49        		.uleb128 0x49
+ 927 0133 13        		.uleb128 0x13
+ 928 0134 02        		.uleb128 0x2
+ 929 0135 06        		.uleb128 0x6
+ 930 0136 00        		.byte	0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 21
+
+
+ 931 0137 00        		.byte	0
+ 932 0138 16        		.uleb128 0x16
+ 933 0139 2E        		.uleb128 0x2e
+ 934 013a 01        		.byte	0x1
+ 935 013b 3F        		.uleb128 0x3f
+ 936 013c 0C        		.uleb128 0xc
+ 937 013d 03        		.uleb128 0x3
+ 938 013e 0E        		.uleb128 0xe
+ 939 013f 3A        		.uleb128 0x3a
+ 940 0140 0B        		.uleb128 0xb
+ 941 0141 3B        		.uleb128 0x3b
+ 942 0142 0B        		.uleb128 0xb
+ 943 0143 27        		.uleb128 0x27
+ 944 0144 0C        		.uleb128 0xc
+ 945 0145 11        		.uleb128 0x11
+ 946 0146 01        		.uleb128 0x1
+ 947 0147 12        		.uleb128 0x12
+ 948 0148 01        		.uleb128 0x1
+ 949 0149 40        		.uleb128 0x40
+ 950 014a 0A        		.uleb128 0xa
+ 951 014b 9742      		.uleb128 0x2117
+ 952 014d 0C        		.uleb128 0xc
+ 953 014e 01        		.uleb128 0x1
+ 954 014f 13        		.uleb128 0x13
+ 955 0150 00        		.byte	0
+ 956 0151 00        		.byte	0
+ 957 0152 17        		.uleb128 0x17
+ 958 0153 01        		.uleb128 0x1
+ 959 0154 01        		.byte	0x1
+ 960 0155 49        		.uleb128 0x49
+ 961 0156 13        		.uleb128 0x13
+ 962 0157 01        		.uleb128 0x1
+ 963 0158 13        		.uleb128 0x13
+ 964 0159 00        		.byte	0
+ 965 015a 00        		.byte	0
+ 966 015b 18        		.uleb128 0x18
+ 967 015c 21        		.uleb128 0x21
+ 968 015d 00        		.byte	0
+ 969 015e 49        		.uleb128 0x49
+ 970 015f 13        		.uleb128 0x13
+ 971 0160 2F        		.uleb128 0x2f
+ 972 0161 0B        		.uleb128 0xb
+ 973 0162 00        		.byte	0
+ 974 0163 00        		.byte	0
+ 975 0164 19        		.uleb128 0x19
+ 976 0165 34        		.uleb128 0x34
+ 977 0166 00        		.byte	0
+ 978 0167 03        		.uleb128 0x3
+ 979 0168 0E        		.uleb128 0xe
+ 980 0169 3A        		.uleb128 0x3a
+ 981 016a 0B        		.uleb128 0xb
+ 982 016b 3B        		.uleb128 0x3b
+ 983 016c 0B        		.uleb128 0xb
+ 984 016d 49        		.uleb128 0x49
+ 985 016e 13        		.uleb128 0x13
+ 986 016f 3F        		.uleb128 0x3f
+ 987 0170 0C        		.uleb128 0xc
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 22
+
+
+ 988 0171 02        		.uleb128 0x2
+ 989 0172 0A        		.uleb128 0xa
+ 990 0173 00        		.byte	0
+ 991 0174 00        		.byte	0
+ 992 0175 1A        		.uleb128 0x1a
+ 993 0176 2E        		.uleb128 0x2e
+ 994 0177 00        		.byte	0
+ 995 0178 3F        		.uleb128 0x3f
+ 996 0179 0C        		.uleb128 0xc
+ 997 017a 3C        		.uleb128 0x3c
+ 998 017b 0C        		.uleb128 0xc
+ 999 017c 8740      		.uleb128 0x2007
+ 1000 017e 0E        		.uleb128 0xe
+ 1001 017f 03        		.uleb128 0x3
+ 1002 0180 0E        		.uleb128 0xe
+ 1003 0181 3A        		.uleb128 0x3a
+ 1004 0182 0B        		.uleb128 0xb
+ 1005 0183 3B        		.uleb128 0x3b
+ 1006 0184 0B        		.uleb128 0xb
+ 1007 0185 00        		.byte	0
+ 1008 0186 00        		.byte	0
+ 1009 0187 00        		.byte	0
+ 1010               		.section	.debug_loc,"",@progbits
+ 1011               	.Ldebug_loc0:
+ 1012               	.LLST0:
+ 1013 0000 0000 0000 		.long	.LFB2-.Ltext0
+ 1014 0004 0200 0000 		.long	.LCFI0-.Ltext0
+ 1015 0008 0300      		.word	0x3
+ 1016 000a 92        		.byte	0x92
+ 1017 000b 20        		.uleb128 0x20
+ 1018 000c 02        		.sleb128 2
+ 1019 000d 0200 0000 		.long	.LCFI0-.Ltext0
+ 1020 0011 0400 0000 		.long	.LCFI1-.Ltext0
+ 1021 0015 0300      		.word	0x3
+ 1022 0017 92        		.byte	0x92
+ 1023 0018 20        		.uleb128 0x20
+ 1024 0019 03        		.sleb128 3
+ 1025 001a 0400 0000 		.long	.LCFI1-.Ltext0
+ 1026 001e 0600 0000 		.long	.LCFI2-.Ltext0
+ 1027 0022 0300      		.word	0x3
+ 1028 0024 92        		.byte	0x92
+ 1029 0025 20        		.uleb128 0x20
+ 1030 0026 04        		.sleb128 4
+ 1031 0027 0600 0000 		.long	.LCFI2-.Ltext0
+ 1032 002b 0A00 0000 		.long	.LCFI3-.Ltext0
+ 1033 002f 0300      		.word	0x3
+ 1034 0031 92        		.byte	0x92
+ 1035 0032 20        		.uleb128 0x20
+ 1036 0033 06        		.sleb128 6
+ 1037 0034 0A00 0000 		.long	.LCFI3-.Ltext0
+ 1038 0038 5600 0000 		.long	.LFE2-.Ltext0
+ 1039 003c 0200      		.word	0x2
+ 1040 003e 8C        		.byte	0x8c
+ 1041 003f 06        		.sleb128 6
+ 1042 0040 0000 0000 		.long	0
+ 1043 0044 0000 0000 		.long	0
+ 1044               	.LLST1:
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 23
+
+
+ 1045 0048 1A00 0000 		.long	.LVL0-.Ltext0
+ 1046 004c 1C00 0000 		.long	.LVL1-.Ltext0
+ 1047 0050 0500      		.word	0x5
+ 1048 0052 62        		.byte	0x62
+ 1049 0053 93        		.byte	0x93
+ 1050 0054 01        		.uleb128 0x1
+ 1051 0055 93        		.byte	0x93
+ 1052 0056 01        		.uleb128 0x1
+ 1053 0057 1C00 0000 		.long	.LVL1-.Ltext0
+ 1054 005b 2400 0000 		.long	.LVL4-.Ltext0
+ 1055 005f 0600      		.word	0x6
+ 1056 0061 62        		.byte	0x62
+ 1057 0062 93        		.byte	0x93
+ 1058 0063 01        		.uleb128 0x1
+ 1059 0064 69        		.byte	0x69
+ 1060 0065 93        		.byte	0x93
+ 1061 0066 01        		.uleb128 0x1
+ 1062 0067 0000 0000 		.long	0
+ 1063 006b 0000 0000 		.long	0
+ 1064               	.LLST2:
+ 1065 006f 1C00 0000 		.long	.LVL1-.Ltext0
+ 1066 0073 1E00 0000 		.long	.LVL2-.Ltext0
+ 1067 0077 0500      		.word	0x5
+ 1068 0079 88        		.byte	0x88
+ 1069 007a 01        		.sleb128 1
+ 1070 007b 37        		.byte	0x37
+ 1071 007c 1A        		.byte	0x1a
+ 1072 007d 9F        		.byte	0x9f
+ 1073 007e 1E00 0000 		.long	.LVL2-.Ltext0
+ 1074 0082 2000 0000 		.long	.LVL3-.Ltext0
+ 1075 0086 0C00      		.word	0xc
+ 1076 0088 03        		.byte	0x3
+ 1077 0089 0000 0000 		.long	CamConfig_txFifoTail
+ 1078 008d 94        		.byte	0x94
+ 1079 008e 01        		.byte	0x1
+ 1080 008f 23        		.byte	0x23
+ 1081 0090 01        		.uleb128 0x1
+ 1082 0091 37        		.byte	0x37
+ 1083 0092 1A        		.byte	0x1a
+ 1084 0093 9F        		.byte	0x9f
+ 1085 0094 2000 0000 		.long	.LVL3-.Ltext0
+ 1086 0098 2400 0000 		.long	.LVL4-.Ltext0
+ 1087 009c 0100      		.word	0x1
+ 1088 009e 68        		.byte	0x68
+ 1089 009f 0000 0000 		.long	0
+ 1090 00a3 0000 0000 		.long	0
+ 1091               	.LLST3:
+ 1092 00a7 5600 0000 		.long	.LVL8-.Ltext0
+ 1093 00ab 7400 0000 		.long	.LVL11-.Ltext0
+ 1094 00af 0600      		.word	0x6
+ 1095 00b1 68        		.byte	0x68
+ 1096 00b2 93        		.byte	0x93
+ 1097 00b3 01        		.uleb128 0x1
+ 1098 00b4 69        		.byte	0x69
+ 1099 00b5 93        		.byte	0x93
+ 1100 00b6 01        		.uleb128 0x1
+ 1101 00b7 0000 0000 		.long	0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 24
+
+
+ 1102 00bb 0000 0000 		.long	0
+ 1103               	.LLST4:
+ 1104 00bf 5600 0000 		.long	.LVL8-.Ltext0
+ 1105 00c3 7200 0000 		.long	.LVL10-.Ltext0
+ 1106 00c7 0200      		.word	0x2
+ 1107 00c9 31        		.byte	0x31
+ 1108 00ca 9F        		.byte	0x9f
+ 1109 00cb 7200 0000 		.long	.LVL10-.Ltext0
+ 1110 00cf 8000 0000 		.long	.LFE3-.Ltext0
+ 1111 00d3 0F00      		.word	0xf
+ 1112 00d5 03        		.byte	0x3
+ 1113 00d6 0000 0000 		.long	CamConfig_txFifoTail
+ 1114 00da 94        		.byte	0x94
+ 1115 00db 01        		.byte	0x1
+ 1116 00dc 48        		.byte	0x48
+ 1117 00dd 24        		.byte	0x24
+ 1118 00de 82        		.byte	0x82
+ 1119 00df 00        		.sleb128 0
+ 1120 00e0 48        		.byte	0x48
+ 1121 00e1 24        		.byte	0x24
+ 1122 00e2 2E        		.byte	0x2e
+ 1123 00e3 9F        		.byte	0x9f
+ 1124 00e4 0000 0000 		.long	0
+ 1125 00e8 0000 0000 		.long	0
+ 1126               	.LLST5:
+ 1127 00ec 8000 0000 		.long	.LVL12-.Ltext0
+ 1128 00f0 8300 0000 		.long	.LVL13-1-.Ltext0
+ 1129 00f4 0100      		.word	0x1
+ 1130 00f6 68        		.byte	0x68
+ 1131 00f7 8300 0000 		.long	.LVL13-1-.Ltext0
+ 1132 00fb 8600 0000 		.long	.LFE1-.Ltext0
+ 1133 00ff 0400      		.word	0x4
+ 1134 0101 F3        		.byte	0xf3
+ 1135 0102 01        		.uleb128 0x1
+ 1136 0103 68        		.byte	0x68
+ 1137 0104 9F        		.byte	0x9f
+ 1138 0105 0000 0000 		.long	0
+ 1139 0109 0000 0000 		.long	0
+ 1140               	.LLST6:
+ 1141 010d 8000 0000 		.long	.LVL12-.Ltext0
+ 1142 0111 8300 0000 		.long	.LVL13-1-.Ltext0
+ 1143 0115 0100      		.word	0x1
+ 1144 0117 66        		.byte	0x66
+ 1145 0118 8300 0000 		.long	.LVL13-1-.Ltext0
+ 1146 011c 8600 0000 		.long	.LFE1-.Ltext0
+ 1147 0120 0400      		.word	0x4
+ 1148 0122 F3        		.byte	0xf3
+ 1149 0123 01        		.uleb128 0x1
+ 1150 0124 66        		.byte	0x66
+ 1151 0125 9F        		.byte	0x9f
+ 1152 0126 0000 0000 		.long	0
+ 1153 012a 0000 0000 		.long	0
+ 1154               		.section	.debug_aranges,"",@progbits
+ 1155 0000 1C00 0000 		.long	0x1c
+ 1156 0004 0200      		.word	0x2
+ 1157 0006 0000 0000 		.long	.Ldebug_info0
+ 1158 000a 04        		.byte	0x4
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 25
+
+
+ 1159 000b 00        		.byte	0
+ 1160 000c 0000      		.word	0
+ 1161 000e 0000      		.word	0
+ 1162 0010 0000 0000 		.long	.Ltext0
+ 1163 0014 A800 0000 		.long	.Letext0-.Ltext0
+ 1164 0018 0000 0000 		.long	0
+ 1165 001c 0000 0000 		.long	0
+ 1166               		.section	.debug_line,"",@progbits
+ 1167               	.Ldebug_line0:
+ 1168 0000 FA00 0000 		.section	.debug_str,"MS",@progbits,1
+ 1168      0200 4E00 
+ 1168      0000 0201 
+ 1168      FB0E 0A00 
+ 1168      0101 0101 
+ 1169               	.LASF19:
+ 1170 0000 4361 6D43 		.string	"CamConfig_txFifoHead"
+ 1170      6F6E 6669 
+ 1170      675F 7478 
+ 1170      4669 666F 
+ 1170      4865 6164 
+ 1171               	.LASF7:
+ 1172 0015 636F 6E66 		.string	"configReg"
+ 1172      6967 5265 
+ 1172      6700 
+ 1173               	.LASF14:
+ 1174 001f 4361 6D43 		.string	"CamConfig_sendFifoCmds"
+ 1174      6F6E 6669 
+ 1174      675F 7365 
+ 1174      6E64 4669 
+ 1174      666F 436D 
+ 1175               	.LASF25:
+ 1176 0036 4361 6D43 		.string	"CamConfig.c"
+ 1176      6F6E 6669 
+ 1176      672E 6300 
+ 1177               	.LASF23:
+ 1178 0042 4932 4349 		.string	"I2CInt_isI2cBusy"
+ 1178      6E74 5F69 
+ 1178      7349 3263 
+ 1178      4275 7379 
+ 1178      00
+ 1179               	.LASF9:
+ 1180 0053 626F 6F6C 		.string	"bool_t"
+ 1180      5F74 00
+ 1181               	.LASF13:
+ 1182 005a 7265 7456 		.string	"retVal"
+ 1182      616C 00
+ 1183               	.LASF8:
+ 1184 0061 6461 7461 		.string	"data"
+ 1184      00
+ 1185               	.LASF1:
+ 1186 0066 756E 7369 		.string	"unsigned char"
+ 1186      676E 6564 
+ 1186      2063 6861 
+ 1186      7200 
+ 1187               	.LASF4:
+ 1188 0074 6C6F 6E67 		.string	"long unsigned int"
+ 1188      2075 6E73 
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 26
+
+
+ 1188      6967 6E65 
+ 1188      6420 696E 
+ 1188      7400 
+ 1189               	.LASF20:
+ 1190 0086 4361 6D43 		.string	"CamConfig_txFifoTail"
+ 1190      6F6E 6669 
+ 1190      675F 7478 
+ 1190      4669 666F 
+ 1190      5461 696C 
+ 1191               	.LASF12:
+ 1192 009b 746D 7048 		.string	"tmpHead"
+ 1192      6561 6400 
+ 1193               	.LASF26:
+ 1194 00a3 433A 5C77 		.string	"C:\\workspace\\AVRcam\\MainController"
+ 1194      6F72 6B73 
+ 1194      7061 6365 
+ 1194      5C41 5652 
+ 1194      6361 6D5C 
+ 1195               	.LASF22:
+ 1196 00c6 5574 696C 		.string	"Utility_delay"
+ 1196      6974 795F 
+ 1196      6465 6C61 
+ 1196      7900 
+ 1197               	.LASF2:
+ 1198 00d4 756E 7369 		.string	"unsigned int"
+ 1198      676E 6564 
+ 1198      2069 6E74 
+ 1198      00
+ 1199               	.LASF27:
+ 1200 00e1 4361 6D43 		.string	"CamConfig_readTxFifo"
+ 1200      6F6E 6669 
+ 1200      675F 7265 
+ 1200      6164 5478 
+ 1200      4669 666F 
+ 1201               	.LASF6:
+ 1202 00f6 6C6F 6E67 		.string	"long long unsigned int"
+ 1202      206C 6F6E 
+ 1202      6720 756E 
+ 1202      7369 676E 
+ 1202      6564 2069 
+ 1203               	.LASF18:
+ 1204 010d 4361 6D43 		.string	"CamConfig_txFifo"
+ 1204      6F6E 6669 
+ 1204      675F 7478 
+ 1204      4669 666F 
+ 1204      00
+ 1205               	.LASF21:
+ 1206 011e 4932 4349 		.string	"I2CInt_writeData"
+ 1206      6E74 5F77 
+ 1206      7269 7465 
+ 1206      4461 7461 
+ 1206      00
+ 1207               	.LASF28:
+ 1208 012f 4361 6D43 		.string	"CamConfig_writeTxFifo"
+ 1208      6F6E 6669 
+ 1208      675F 7772 
+ 1208      6974 6554 
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 27
+
+
+ 1208      7846 6966 
+ 1209               	.LASF10:
+ 1210 0145 6932 6343 		.string	"i2cCmd_t"
+ 1210      6D64 5F74 
+ 1210      00
+ 1211               	.LASF17:
+ 1212 014e 7369 7A65 		.string	"sizetype"
+ 1212      7479 7065 
+ 1212      00
+ 1213               	.LASF5:
+ 1214 0157 6C6F 6E67 		.string	"long long int"
+ 1214      206C 6F6E 
+ 1214      6720 696E 
+ 1214      7400 
+ 1215               	.LASF15:
+ 1216 0165 4361 6D43 		.string	"CamConfig_setCamReg"
+ 1216      6F6E 6669 
+ 1216      675F 7365 
+ 1216      7443 616D 
+ 1216      5265 6700 
+ 1217               	.LASF16:
+ 1218 0179 4361 6D43 		.string	"CamConfig_init"
+ 1218      6F6E 6669 
+ 1218      675F 696E 
+ 1218      6974 00
+ 1219               	.LASF24:
+ 1220 0188 474E 5520 		.string	"GNU C11 5.4.0 -mn-flash=1 -mno-skip-bug -mmcu=avr4 -g -O1 -funsigned-char -funsigned-bitf
+ 1220      4331 3120 
+ 1220      352E 342E 
+ 1220      3020 2D6D 
+ 1220      6E2D 666C 
+ 1221               	.LASF3:
+ 1222 0203 6C6F 6E67 		.string	"long int"
+ 1222      2069 6E74 
+ 1222      00
+ 1223               	.LASF11:
+ 1224 020c 746D 7054 		.string	"tmpTail"
+ 1224      6169 6C00 
+ 1225               	.LASF0:
+ 1226 0214 7369 676E 		.string	"signed char"
+ 1226      6564 2063 
+ 1226      6861 7200 
+ 1227               		.ident	"GCC: (AVR_8_bit_GNU_Toolchain_3.6.0_1734) 5.4.0"
+ 1228               	.global __do_clear_bss
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s 			page 28
+
+
+DEFINED SYMBOLS
+                            *ABS*:00000000 CamConfig.c
+C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s:2      *ABS*:0000003e __SP_H__
+C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s:3      *ABS*:0000003d __SP_L__
+C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s:4      *ABS*:0000003f __SREG__
+C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s:5      *ABS*:00000000 __tmp_reg__
+C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s:6      *ABS*:00000001 __zero_reg__
+C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s:12     .text:00000000 CamConfig_sendFifoCmds
+                            *COM*:00000010 CamConfig_txFifo
+C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s:205    .bss:00000000 CamConfig_txFifoTail
+C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s:210    .bss:00000001 CamConfig_txFifoHead
+C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s:101    .text:00000056 CamConfig_writeTxFifo
+C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s:142    .text:00000080 CamConfig_setCamReg
+C:\Users\Joe\AppData\Local\Temp\ccst7Fd0.s:161    .text:00000086 CamConfig_init
+
+UNDEFINED SYMBOLS
+I2CInt_writeData
+Utility_delay
+I2CInt_isI2cBusy
+__do_clear_bss

@@ -1,0 +1,1660 @@
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 1
+
+
+   1               		.file	"I2CInterface.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__tmp_reg__ = 0
+   6               	__zero_reg__ = 1
+   7               		.text
+   8               	.Ltext0:
+   9               		.cfi_sections	.debug_frame
+  10               	.global	I2CInt_init
+  11               		.type	I2CInt_init, @function
+  12               	I2CInt_init:
+  13               	.LFB0:
+  14               		.file 1 "I2CInterface.c"
+   1:I2CInterface.c **** /*
+   2:I2CInterface.c ****     Copyright (C) 2004    John Orlando
+   3:I2CInterface.c ****     
+   4:I2CInterface.c ****    AVRcam: a small real-time image processing engine.
+   5:I2CInterface.c **** 
+   6:I2CInterface.c ****     This program is free software; you can redistribute it and/or
+   7:I2CInterface.c ****     modify it under the terms of the GNU General Public
+   8:I2CInterface.c ****     License as published by the Free Software Foundation; either
+   9:I2CInterface.c ****     version 2 of the License, or (at your option) any later version.
+  10:I2CInterface.c **** 
+  11:I2CInterface.c ****     This program is distributed in the hope that it will be useful,
+  12:I2CInterface.c ****     but WITHOUT ANY WARRANTY; without even the implied warranty of
+  13:I2CInterface.c ****     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  14:I2CInterface.c ****     General Public License for more details.
+  15:I2CInterface.c **** 
+  16:I2CInterface.c ****     You should have received a copy of the GNU General Public
+  17:I2CInterface.c ****     License along with this program; if not, write to the Free Software
+  18:I2CInterface.c ****     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+  19:I2CInterface.c **** 
+  20:I2CInterface.c ****    For more information on the AVRcam, please contact:
+  21:I2CInterface.c **** 
+  22:I2CInterface.c ****    john@jrobot.net
+  23:I2CInterface.c **** 
+  24:I2CInterface.c ****    or go to www.jrobot.net for more details regarding the system.
+  25:I2CInterface.c **** */
+  26:I2CInterface.c **** /***********************************************************
+  27:I2CInterface.c **** 	Module Name: I2CInterface.c
+  28:I2CInterface.c **** 	Module Date: 4/10/2004
+  29:I2CInterface.c **** 	Module Auth: John Orlando
+  30:I2CInterface.c **** 	
+  31:I2CInterface.c **** 	Description: This module is responsible for providing a
+  32:I2CInterface.c **** 	low-level interface to the I2C hardware resident on the
+  33:I2CInterface.c **** 	mega8 processor (also known as the Two-Wire Interface,
+  34:I2CInterface.c **** 	or TWI).  The interface is needed to configure the
+  35:I2CInterface.c **** 	needed registers in the OV6620 camera.  This interface
+  36:I2CInterface.c **** 	is interrupt-driven based on the events that should
+  37:I2CInterface.c **** 	occur upon successful writing of an I2C register.
+  38:I2CInterface.c ****     
+  39:I2CInterface.c ****     Revision History:
+  40:I2CInterface.c ****     Date        Rel Ver.    Notes
+  41:I2CInterface.c ****     4/10/2004      0.1     Module created
+  42:I2CInterface.c ****     6/30/2004      1.0     Initial release for Circuit Cellar
+  43:I2CInterface.c ****                            contest.
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 2
+
+
+  44:I2CInterface.c **** 
+  45:I2CInterface.c **** ***********************************************************/
+  46:I2CInterface.c **** 
+  47:I2CInterface.c **** /*	Includes */
+  48:I2CInterface.c **** #include <avr/io.h>
+  49:I2CInterface.c **** #include <util/twi.h>
+  50:I2CInterface.c **** #include <avr/signal.h>
+  51:I2CInterface.c **** #include <avr/interrupt.h>
+  52:I2CInterface.c **** #include "CamConfig.h"
+  53:I2CInterface.c **** #include "CommonDefs.h"
+  54:I2CInterface.c **** 
+  55:I2CInterface.c **** /*  Local Variables */
+  56:I2CInterface.c **** 
+  57:I2CInterface.c **** /* These variables are used as storage space for the current
+  58:I2CInterface.c ****    I2C command being sent over the interface.  They need to
+  59:I2CInterface.c ****    be volatile since they are dealt with an the TWI ISR */
+  60:I2CInterface.c **** volatile static unsigned char twi_address;
+  61:I2CInterface.c **** volatile static unsigned char *twi_data;
+  62:I2CInterface.c **** volatile static unsigned char twi_ddr;
+  63:I2CInterface.c **** volatile static unsigned char twi_bytes;
+  64:I2CInterface.c **** volatile static unsigned char status;
+  65:I2CInterface.c **** volatile static unsigned char retry_cnt;
+  66:I2CInterface.c **** 
+  67:I2CInterface.c **** /* 	Local Structures and Typedefs */
+  68:I2CInterface.c **** 
+  69:I2CInterface.c **** /*  Extern Variables */
+  70:I2CInterface.c **** 
+  71:I2CInterface.c **** /*  Definitions */
+  72:I2CInterface.c **** /* Bit definitions for the tw_status register */
+  73:I2CInterface.c **** #define MAX_TWI_RETRIES 2
+  74:I2CInterface.c **** #define BUSY 7
+  75:I2CInterface.c **** 
+  76:I2CInterface.c **** /***********************************************************
+  77:I2CInterface.c **** 	Function Name: I2CInt_init
+  78:I2CInterface.c **** 	Function Description: This function is responsible
+  79:I2CInterface.c **** 	for setting up the registers needed for the TWI 
+  80:I2CInterface.c **** 	interface
+  81:I2CInterface.c **** 	
+  82:I2CInterface.c **** 	Inputs:  none
+  83:I2CInterface.c **** 	Outputs: none
+  84:I2CInterface.c **** ***********************************************************/	
+  85:I2CInterface.c **** void I2CInt_init(void)
+  86:I2CInterface.c **** {
+  15               		.loc 1 86 0
+  16               		.cfi_startproc
+  17               	/* prologue: function */
+  18               	/* frame size = 0 */
+  19               	/* stack size = 0 */
+  20               	.L__stack_usage = 0
+  87:I2CInterface.c **** 	TWSR = 0;
+  21               		.loc 1 87 0
+  22 0000 11B8      		out 0x1,__zero_reg__
+  88:I2CInterface.c ****     
+  89:I2CInterface.c **** 	/* init the speed of the I2C interface, running at
+  90:I2CInterface.c ****     100 Kbps */
+  91:I2CInterface.c **** 	TWBR = (FOSC / I2C_SPEED - 16)/2;
+  23               		.loc 1 91 0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 3
+
+
+  24 0002 88E4      		ldi r24,lo8(72)
+  25 0004 80B9      		out 0,r24
+  26 0006 0895      		ret
+  27               		.cfi_endproc
+  28               	.LFE0:
+  29               		.size	I2CInt_init, .-I2CInt_init
+  30               	.global	I2CInt_writeData
+  31               		.type	I2CInt_writeData, @function
+  32               	I2CInt_writeData:
+  33               	.LFB1:
+  92:I2CInterface.c **** }
+  93:I2CInterface.c **** 
+  94:I2CInterface.c **** /***********************************************************
+  95:I2CInterface.c **** 	Function Name: I2CInt_writeData
+  96:I2CInterface.c **** 	Function Description: This function is responsible for
+  97:I2CInterface.c **** 	initiating the process of writing a sequence of bytes
+  98:I2CInterface.c **** 	an I2C slave address.  This function will try to write
+  99:I2CInterface.c **** 	the data three times before giving up.
+ 100:I2CInterface.c **** 	Inputs: address: the address of the I2C slave device
+ 101:I2CInterface.c **** 			data: a pointer to the data to be written 
+ 102:I2CInterface.c **** 				  to the slave...for camera interfacing,
+ 103:I2CInterface.c **** 				  the data follows a <register #><data>
+ 104:I2CInterface.c **** 				  format
+ 105:I2CInterface.c **** 			bytes: the number of bytes to write 
+ 106:I2CInterface.c **** 	Outputs: none
+ 107:I2CInterface.c **** ***********************************************************/
+ 108:I2CInterface.c **** void I2CInt_writeData(unsigned char address, unsigned char *data, unsigned char bytes)
+ 109:I2CInterface.c **** {
+  34               		.loc 1 109 0
+  35               		.cfi_startproc
+  36               	/* prologue: function */
+  37               	/* frame size = 0 */
+  38               	/* stack size = 0 */
+  39               	.L__stack_usage = 0
+  40               	.LVL0:
+  41               	.L3:
+ 110:I2CInterface.c **** 	while(status & (1<<BUSY));		/* Bus is busy wait (or exit with error code) */
+  42               		.loc 1 110 0 discriminator 1
+  43 0008 9091 0000 		lds r25,status
+  44 000c 9923      		tst r25
+  45 000e 04F0      		brlt .L3
+  46               	.L5:
+ 111:I2CInterface.c **** 	while(TWCR & (1<<TWSTO));
+  47               		.loc 1 111 0 discriminator 1
+  48 0010 06B6      		in __tmp_reg__,0x36
+  49 0012 04FC      		sbrc __tmp_reg__,4
+  50 0014 00C0      		rjmp .L5
+ 112:I2CInterface.c **** 	
+ 113:I2CInterface.c **** 	/* copy the needed data and state info to our local I2C command structure */
+ 114:I2CInterface.c **** 	twi_address = address;
+  51               		.loc 1 114 0
+  52 0016 8093 0000 		sts twi_address,r24
+ 115:I2CInterface.c **** 	twi_data = data;
+  53               		.loc 1 115 0
+  54 001a 7093 0000 		sts twi_data+1,r23
+  55 001e 6093 0000 		sts twi_data,r22
+ 116:I2CInterface.c **** 	twi_bytes = bytes;
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 4
+
+
+  56               		.loc 1 116 0
+  57 0022 4093 0000 		sts twi_bytes,r20
+ 117:I2CInterface.c **** 	twi_ddr = TW_WRITE;
+  58               		.loc 1 117 0
+  59 0026 1092 0000 		sts twi_ddr,__zero_reg__
+ 118:I2CInterface.c **** 
+ 119:I2CInterface.c **** 	retry_cnt = 0;
+  60               		.loc 1 119 0
+  61 002a 1092 0000 		sts retry_cnt,__zero_reg__
+ 120:I2CInterface.c **** 	
+ 121:I2CInterface.c **** 	/* Generate start condition, the remainder of the transfer is interrupt driven and
+ 122:I2CInterface.c **** 	   will be performed in the background */
+ 123:I2CInterface.c **** 	TWCR = (1<<TWINT)|(1<<TWSTA)|(1<<TWEN)|(1<<TWIE);
+  62               		.loc 1 123 0
+  63 002e 85EA      		ldi r24,lo8(-91)
+  64               	.LVL1:
+  65 0030 86BF      		out 0x36,r24
+ 124:I2CInterface.c **** 	
+ 125:I2CInterface.c **** 	status |= (1<<BUSY);
+  66               		.loc 1 125 0
+  67 0032 8091 0000 		lds r24,status
+  68 0036 8068      		ori r24,lo8(-128)
+  69 0038 8093 0000 		sts status,r24
+  70 003c 0895      		ret
+  71               		.cfi_endproc
+  72               	.LFE1:
+  73               		.size	I2CInt_writeData, .-I2CInt_writeData
+  74               	.global	I2CInt_readData
+  75               		.type	I2CInt_readData, @function
+  76               	I2CInt_readData:
+  77               	.LFB2:
+ 126:I2CInterface.c **** }
+ 127:I2CInterface.c **** 
+ 128:I2CInterface.c **** /***********************************************************
+ 129:I2CInterface.c **** 	Function Name: I2CInt_readData
+ 130:I2CInterface.c **** 	Function Description: This funcion is responsible for
+ 131:I2CInterface.c **** 	reading the specified number of bytes from a slave
+ 132:I2CInterface.c **** 	device.
+ 133:I2CInterface.c **** 	Inputs:  address: the slave address to read from
+ 134:I2CInterface.c **** 			 data: a pointer to where the data will be stored
+ 135:I2CInterface.c **** 			 bytes: the number of bytes to read
+ 136:I2CInterface.c **** 	Outputs: none
+ 137:I2CInterface.c **** ***********************************************************/
+ 138:I2CInterface.c **** void I2CInt_readData(unsigned char address, unsigned char *data, unsigned char bytes)
+ 139:I2CInterface.c **** {
+  78               		.loc 1 139 0
+  79               		.cfi_startproc
+  80               	/* prologue: function */
+  81               	/* frame size = 0 */
+  82               	/* stack size = 0 */
+  83               	.L__stack_usage = 0
+  84               	.LVL2:
+  85               	.L9:
+ 140:I2CInterface.c ****     /* Bus is busy wait (or exit with error code) */
+ 141:I2CInterface.c **** 	while(status & (1<<BUSY));									
+  86               		.loc 1 141 0 discriminator 1
+  87 003e 9091 0000 		lds r25,status
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 5
+
+
+  88 0042 9923      		tst r25
+  89 0044 04F0      		brlt .L9
+ 142:I2CInterface.c **** 
+ 143:I2CInterface.c **** 	twi_address = address;
+  90               		.loc 1 143 0
+  91 0046 8093 0000 		sts twi_address,r24
+ 144:I2CInterface.c **** 	twi_data = data;
+  92               		.loc 1 144 0
+  93 004a 7093 0000 		sts twi_data+1,r23
+  94 004e 6093 0000 		sts twi_data,r22
+ 145:I2CInterface.c **** 	twi_bytes = bytes;
+  95               		.loc 1 145 0
+  96 0052 4093 0000 		sts twi_bytes,r20
+ 146:I2CInterface.c **** 	twi_ddr = TW_READ;
+  97               		.loc 1 146 0
+  98 0056 81E0      		ldi r24,lo8(1)
+  99               	.LVL3:
+ 100 0058 8093 0000 		sts twi_ddr,r24
+ 147:I2CInterface.c **** 
+ 148:I2CInterface.c **** 	retry_cnt = 0;
+ 101               		.loc 1 148 0
+ 102 005c 1092 0000 		sts retry_cnt,__zero_reg__
+ 149:I2CInterface.c **** 	
+ 150:I2CInterface.c **** 	/* Generate start condition, the remainder of the transfer is interrupt driven and
+ 151:I2CInterface.c **** 	   will be performed in the background */
+ 152:I2CInterface.c **** 	TWCR = (1<<TWINT)|(1<<TWSTA)|(1<<TWEN)|(1<<TWIE);
+ 103               		.loc 1 152 0
+ 104 0060 85EA      		ldi r24,lo8(-91)
+ 105 0062 86BF      		out 0x36,r24
+ 153:I2CInterface.c **** 	
+ 154:I2CInterface.c **** 	status |= (1<<BUSY);
+ 106               		.loc 1 154 0
+ 107 0064 8091 0000 		lds r24,status
+ 108 0068 8068      		ori r24,lo8(-128)
+ 109 006a 8093 0000 		sts status,r24
+ 110 006e 0895      		ret
+ 111               		.cfi_endproc
+ 112               	.LFE2:
+ 113               		.size	I2CInt_readData, .-I2CInt_readData
+ 114               	.global	I2CInt_isI2cBusy
+ 115               		.type	I2CInt_isI2cBusy, @function
+ 116               	I2CInt_isI2cBusy:
+ 117               	.LFB3:
+ 155:I2CInterface.c **** }
+ 156:I2CInterface.c **** 
+ 157:I2CInterface.c **** /***********************************************************
+ 158:I2CInterface.c **** 	Function Name: I2CInt_isI2cBusy
+ 159:I2CInterface.c **** 	Function Description: This funcion is responsible for
+ 160:I2CInterface.c **** 	indicating if the I2C bus is currently busy to external
+ 161:I2CInterface.c **** 	modules.
+ 162:I2CInterface.c **** 	device.
+ 163:I2CInterface.c **** 	Inputs:  none
+ 164:I2CInterface.c **** 	Outputs: bool_t - indicating if bus is busy
+ 165:I2CInterface.c **** ***********************************************************/
+ 166:I2CInterface.c **** bool_t I2CInt_isI2cBusy(void)
+ 167:I2CInterface.c **** {
+ 118               		.loc 1 167 0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 6
+
+
+ 119               		.cfi_startproc
+ 120               	/* prologue: function */
+ 121               	/* frame size = 0 */
+ 122               	/* stack size = 0 */
+ 123               	.L__stack_usage = 0
+ 124               	.LVL4:
+ 168:I2CInterface.c **** 	bool_t retVal = FALSE;
+ 169:I2CInterface.c **** 	if ( (status & (1<<BUSY)) != 0)
+ 125               		.loc 1 169 0
+ 126 0070 8091 0000 		lds r24,status
+ 127               	.LVL5:
+ 170:I2CInterface.c **** 	{
+ 171:I2CInterface.c **** 		retVal = TRUE;
+ 172:I2CInterface.c **** 	}
+ 173:I2CInterface.c **** 	
+ 174:I2CInterface.c **** 	return(retVal);
+ 175:I2CInterface.c **** }
+ 128               		.loc 1 175 0
+ 129 0074 881F      		rol r24
+ 130 0076 8827      		clr r24
+ 131 0078 881F      		rol r24
+ 132               	.LVL6:
+ 133 007a 0895      		ret
+ 134               		.cfi_endproc
+ 135               	.LFE3:
+ 136               		.size	I2CInt_isI2cBusy, .-I2CInt_isI2cBusy
+ 137               	.global	__vector_17
+ 138               		.type	__vector_17, @function
+ 139               	__vector_17:
+ 140               	.LFB4:
+ 176:I2CInterface.c **** 
+ 177:I2CInterface.c **** /***********************************************************
+ 178:I2CInterface.c **** 	Function Name: <interrupt handler for I2C>
+ 179:I2CInterface.c **** 	Function Description: This function is responsible for
+ 180:I2CInterface.c **** 	implementing the control logic needed to perform a
+ 181:I2CInterface.c **** 	read or write operation with an I2C slave.
+ 182:I2CInterface.c **** 	Inputs:  none
+ 183:I2CInterface.c **** 	Outputs: none
+ 184:I2CInterface.c **** ***********************************************************/
+ 185:I2CInterface.c **** SIGNAL(TWI_vect)
+ 186:I2CInterface.c **** {
+ 141               		.loc 1 186 0
+ 142               		.cfi_startproc
+ 143 007c 1F92      		push r1
+ 144               	.LCFI0:
+ 145               		.cfi_def_cfa_offset 3
+ 146               		.cfi_offset 1, -2
+ 147 007e 0F92      		push r0
+ 148               	.LCFI1:
+ 149               		.cfi_def_cfa_offset 4
+ 150               		.cfi_offset 0, -3
+ 151 0080 0FB6      		in r0,__SREG__
+ 152 0082 0F92      		push r0
+ 153 0084 1124      		clr __zero_reg__
+ 154 0086 8F93      		push r24
+ 155               	.LCFI2:
+ 156               		.cfi_def_cfa_offset 5
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 7
+
+
+ 157               		.cfi_offset 24, -4
+ 158 0088 9F93      		push r25
+ 159               	.LCFI3:
+ 160               		.cfi_def_cfa_offset 6
+ 161               		.cfi_offset 25, -5
+ 162 008a AF93      		push r26
+ 163               	.LCFI4:
+ 164               		.cfi_def_cfa_offset 7
+ 165               		.cfi_offset 26, -6
+ 166 008c BF93      		push r27
+ 167               	.LCFI5:
+ 168               		.cfi_def_cfa_offset 8
+ 169               		.cfi_offset 27, -7
+ 170 008e EF93      		push r30
+ 171               	.LCFI6:
+ 172               		.cfi_def_cfa_offset 9
+ 173               		.cfi_offset 30, -8
+ 174 0090 FF93      		push r31
+ 175               	.LCFI7:
+ 176               		.cfi_def_cfa_offset 10
+ 177               		.cfi_offset 31, -9
+ 178               	/* prologue: Signal */
+ 179               	/* frame size = 0 */
+ 180               	/* stack size = 9 */
+ 181               	.L__stack_usage = 9
+ 187:I2CInterface.c **** 	unsigned char TWI_status = TWSR & TW_STATUS_MASK;   /* grab just the status bits */
+ 182               		.loc 1 187 0
+ 183 0092 81B1      		in r24,0x1
+ 184               	.LVL7:
+ 188:I2CInterface.c **** 	
+ 189:I2CInterface.c ****     /* the entire I2C handler is state-based...determine
+ 190:I2CInterface.c ****     what needs to be done based on TWI_status */
+ 191:I2CInterface.c **** 	switch(TWI_status) 
+ 185               		.loc 1 191 0
+ 186 0094 E82F      		mov r30,r24
+ 187 0096 E87F      		andi r30,lo8(-8)
+ 188               	.LVL8:
+ 189 0098 8E2F      		mov r24,r30
+ 190 009a 90E0      		ldi r25,0
+ 191 009c FC01      		movw r30,r24
+ 192               	.LVL9:
+ 193 009e 3897      		sbiw r30,8
+ 194 00a0 E135      		cpi r30,81
+ 195 00a2 F105      		cpc r31,__zero_reg__
+ 196 00a4 00F0      		brlo .+2
+ 197 00a6 00C0      		rjmp .L12
+ 198 00a8 E050      		subi r30,lo8(-(gs(.L15)))
+ 199 00aa F040      		sbci r31,hi8(-(gs(.L15)))
+ 200 00ac 0994      		ijmp
+ 201               		.section	.progmem.gcc_sw_table,"ax",@progbits
+ 202               		.p2align	1
+ 203               	.L15:
+ 204 0000 00C0      		rjmp .L14
+ 205 0002 00C0      		rjmp .L12
+ 206 0004 00C0      		rjmp .L12
+ 207 0006 00C0      		rjmp .L12
+ 208 0008 00C0      		rjmp .L12
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 8
+
+
+ 209 000a 00C0      		rjmp .L12
+ 210 000c 00C0      		rjmp .L12
+ 211 000e 00C0      		rjmp .L12
+ 212 0010 00C0      		rjmp .L14
+ 213 0012 00C0      		rjmp .L12
+ 214 0014 00C0      		rjmp .L12
+ 215 0016 00C0      		rjmp .L12
+ 216 0018 00C0      		rjmp .L12
+ 217 001a 00C0      		rjmp .L12
+ 218 001c 00C0      		rjmp .L12
+ 219 001e 00C0      		rjmp .L12
+ 220 0020 00C0      		rjmp .L16
+ 221 0022 00C0      		rjmp .L12
+ 222 0024 00C0      		rjmp .L12
+ 223 0026 00C0      		rjmp .L12
+ 224 0028 00C0      		rjmp .L12
+ 225 002a 00C0      		rjmp .L12
+ 226 002c 00C0      		rjmp .L12
+ 227 002e 00C0      		rjmp .L12
+ 228 0030 00C0      		rjmp .L17
+ 229 0032 00C0      		rjmp .L12
+ 230 0034 00C0      		rjmp .L12
+ 231 0036 00C0      		rjmp .L12
+ 232 0038 00C0      		rjmp .L12
+ 233 003a 00C0      		rjmp .L12
+ 234 003c 00C0      		rjmp .L12
+ 235 003e 00C0      		rjmp .L12
+ 236 0040 00C0      		rjmp .L18
+ 237 0042 00C0      		rjmp .L12
+ 238 0044 00C0      		rjmp .L12
+ 239 0046 00C0      		rjmp .L12
+ 240 0048 00C0      		rjmp .L12
+ 241 004a 00C0      		rjmp .L12
+ 242 004c 00C0      		rjmp .L12
+ 243 004e 00C0      		rjmp .L12
+ 244 0050 00C0      		rjmp .L19
+ 245 0052 00C0      		rjmp .L12
+ 246 0054 00C0      		rjmp .L12
+ 247 0056 00C0      		rjmp .L12
+ 248 0058 00C0      		rjmp .L12
+ 249 005a 00C0      		rjmp .L12
+ 250 005c 00C0      		rjmp .L12
+ 251 005e 00C0      		rjmp .L12
+ 252 0060 00C0      		rjmp .L12
+ 253 0062 00C0      		rjmp .L12
+ 254 0064 00C0      		rjmp .L12
+ 255 0066 00C0      		rjmp .L12
+ 256 0068 00C0      		rjmp .L12
+ 257 006a 00C0      		rjmp .L12
+ 258 006c 00C0      		rjmp .L12
+ 259 006e 00C0      		rjmp .L12
+ 260 0070 00C0      		rjmp .L20
+ 261 0072 00C0      		rjmp .L12
+ 262 0074 00C0      		rjmp .L12
+ 263 0076 00C0      		rjmp .L12
+ 264 0078 00C0      		rjmp .L12
+ 265 007a 00C0      		rjmp .L12
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 9
+
+
+ 266 007c 00C0      		rjmp .L12
+ 267 007e 00C0      		rjmp .L12
+ 268 0080 00C0      		rjmp .L17
+ 269 0082 00C0      		rjmp .L12
+ 270 0084 00C0      		rjmp .L12
+ 271 0086 00C0      		rjmp .L12
+ 272 0088 00C0      		rjmp .L12
+ 273 008a 00C0      		rjmp .L12
+ 274 008c 00C0      		rjmp .L12
+ 275 008e 00C0      		rjmp .L12
+ 276 0090 00C0      		rjmp .L21
+ 277 0092 00C0      		rjmp .L12
+ 278 0094 00C0      		rjmp .L12
+ 279 0096 00C0      		rjmp .L12
+ 280 0098 00C0      		rjmp .L12
+ 281 009a 00C0      		rjmp .L12
+ 282 009c 00C0      		rjmp .L12
+ 283 009e 00C0      		rjmp .L12
+ 284 00a0 00C0      		rjmp .L22
+ 285               		.text
+ 286               	.L14:
+ 192:I2CInterface.c ****     {
+ 193:I2CInterface.c ****         case TW_START:									/* Start condition */
+ 194:I2CInterface.c ****         case TW_REP_START:								/* Repeated start condition */
+ 195:I2CInterface.c ****             if(retry_cnt > MAX_TWI_RETRIES) 
+ 287               		.loc 1 195 0
+ 288 00ae 8091 0000 		lds r24,retry_cnt
+ 289               	.LVL10:
+ 290 00b2 8330      		cpi r24,lo8(3)
+ 291 00b4 00F0      		brlo .L23
+ 196:I2CInterface.c ****             {
+ 197:I2CInterface.c ****                 /* generate stop condition if we've reached our retry limit */
+ 198:I2CInterface.c ****                 TWCR |= (1<<TWINT)|(1<<TWSTO);					
+ 292               		.loc 1 198 0
+ 293 00b6 86B7      		in r24,0x36
+ 294 00b8 8069      		ori r24,lo8(-112)
+ 295 00ba 86BF      		out 0x36,r24
+ 199:I2CInterface.c ****                 status &= ~(1<<BUSY);								
+ 296               		.loc 1 199 0
+ 297 00bc 8091 0000 		lds r24,status
+ 298 00c0 8F77      		andi r24,lo8(127)
+ 299 00c2 8093 0000 		sts status,r24
+ 200:I2CInterface.c ****                 return;												
+ 300               		.loc 1 200 0
+ 301 00c6 00C0      		rjmp .L12
+ 302               	.L23:
+ 201:I2CInterface.c ****             }
+ 202:I2CInterface.c ****             /* indicate read or write */
+ 203:I2CInterface.c ****             TWDR = (twi_address<<1) + twi_ddr;	
+ 303               		.loc 1 203 0
+ 304 00c8 8091 0000 		lds r24,twi_address
+ 305 00cc 9091 0000 		lds r25,twi_ddr
+ 306 00d0 880F      		lsl r24
+ 307 00d2 890F      		add r24,r25
+ 308 00d4 83B9      		out 0x3,r24
+ 204:I2CInterface.c ****             /* TWSTA must be cleared...also clears TWINT */
+ 205:I2CInterface.c ****             TWCR &= ~(1<<TWSTA);
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 10
+
+
+ 309               		.loc 1 205 0
+ 310 00d6 86B7      		in r24,0x36
+ 311 00d8 8F7D      		andi r24,lo8(-33)
+ 312 00da 86BF      		out 0x36,r24
+ 206:I2CInterface.c ****             break;
+ 313               		.loc 1 206 0
+ 314 00dc 00C0      		rjmp .L12
+ 315               	.LVL11:
+ 316               	.L16:
+ 207:I2CInterface.c **** 
+ 208:I2CInterface.c ****         case TW_MT_SLA_ACK:							/* Slave acknowledged address, */
+ 209:I2CInterface.c ****             retry_cnt = 0;					
+ 317               		.loc 1 209 0
+ 318 00de 1092 0000 		sts retry_cnt,__zero_reg__
+ 210:I2CInterface.c ****             /* tx the data, and increment the data pointer */
+ 211:I2CInterface.c ****             TWDR = *twi_data;										
+ 319               		.loc 1 211 0
+ 320 00e2 E091 0000 		lds r30,twi_data
+ 321 00e6 F091 0000 		lds r31,twi_data+1
+ 322 00ea 8081      		ld r24,Z
+ 323               	.LVL12:
+ 324 00ec 83B9      		out 0x3,r24
+ 212:I2CInterface.c ****             twi_data++;			
+ 325               		.loc 1 212 0
+ 326 00ee 8091 0000 		lds r24,twi_data
+ 327 00f2 9091 0000 		lds r25,twi_data+1
+ 328 00f6 0196      		adiw r24,1
+ 329 00f8 9093 0000 		sts twi_data+1,r25
+ 330 00fc 8093 0000 		sts twi_data,r24
+ 213:I2CInterface.c **** 
+ 214:I2CInterface.c ****             /* clear the int to continue */
+ 215:I2CInterface.c ****             TWCR |= (1<<TWINT);						
+ 331               		.loc 1 215 0
+ 332 0100 86B7      		in r24,0x36
+ 333 0102 8068      		ori r24,lo8(-128)
+ 334 0104 86BF      		out 0x36,r24
+ 216:I2CInterface.c ****             break;
+ 335               		.loc 1 216 0
+ 336 0106 00C0      		rjmp .L12
+ 337               	.LVL13:
+ 338               	.L17:
+ 217:I2CInterface.c **** 
+ 218:I2CInterface.c ****         case TW_MT_SLA_NACK:							/* Slave didn't acknowledge address, */
+ 219:I2CInterface.c ****         case TW_MR_SLA_NACK:
+ 220:I2CInterface.c ****             retry_cnt++;		
+ 339               		.loc 1 220 0
+ 340 0108 8091 0000 		lds r24,retry_cnt
+ 341               	.LVL14:
+ 342 010c 8F5F      		subi r24,lo8(-(1))
+ 343 010e 8093 0000 		sts retry_cnt,r24
+ 221:I2CInterface.c **** 
+ 222:I2CInterface.c ****             /* retry...*/
+ 223:I2CInterface.c ****             TWCR |= (1<<TWINT)|(1<<TWSTA)|(1<<TWSTO);	
+ 344               		.loc 1 223 0
+ 345 0112 86B7      		in r24,0x36
+ 346 0114 806B      		ori r24,lo8(-80)
+ 347 0116 86BF      		out 0x36,r24
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 11
+
+
+ 224:I2CInterface.c ****             break;
+ 348               		.loc 1 224 0
+ 349 0118 00C0      		rjmp .L12
+ 350               	.LVL15:
+ 351               	.L18:
+ 225:I2CInterface.c **** 
+ 226:I2CInterface.c ****         case TW_MT_DATA_ACK:							/* Slave Acknowledged data, */
+ 227:I2CInterface.c ****             if(--twi_bytes > 0) 
+ 352               		.loc 1 227 0
+ 353 011a 8091 0000 		lds r24,twi_bytes
+ 354               	.LVL16:
+ 355 011e 8150      		subi r24,lo8(-(-1))
+ 356 0120 8093 0000 		sts twi_bytes,r24
+ 357 0124 8823      		tst r24
+ 358 0126 01F0      		breq .L24
+ 228:I2CInterface.c ****             {						
+ 229:I2CInterface.c ****                 /* more data to send, so send it */
+ 230:I2CInterface.c ****                 TWDR = *twi_data;									
+ 359               		.loc 1 230 0
+ 360 0128 E091 0000 		lds r30,twi_data
+ 361 012c F091 0000 		lds r31,twi_data+1
+ 362 0130 8081      		ld r24,Z
+ 363 0132 83B9      		out 0x3,r24
+ 231:I2CInterface.c ****                 twi_data++;											
+ 364               		.loc 1 231 0
+ 365 0134 8091 0000 		lds r24,twi_data
+ 366 0138 9091 0000 		lds r25,twi_data+1
+ 367 013c 0196      		adiw r24,1
+ 368 013e 9093 0000 		sts twi_data+1,r25
+ 369 0142 8093 0000 		sts twi_data,r24
+ 232:I2CInterface.c ****                 TWCR |= (1<<TWINT);								
+ 370               		.loc 1 232 0
+ 371 0146 86B7      		in r24,0x36
+ 372 0148 8068      		ori r24,lo8(-128)
+ 373 014a 86BF      		out 0x36,r24
+ 374 014c 00C0      		rjmp .L12
+ 375               	.L24:
+ 233:I2CInterface.c ****             }
+ 234:I2CInterface.c ****             else 
+ 235:I2CInterface.c ****             {
+ 236:I2CInterface.c ****                 /* generate the stop condition if needed */
+ 237:I2CInterface.c ****                 TWCR |= (1<<TWSTO)|(1<<TWINT);					
+ 376               		.loc 1 237 0
+ 377 014e 86B7      		in r24,0x36
+ 378 0150 8069      		ori r24,lo8(-112)
+ 379 0152 86BF      		out 0x36,r24
+ 238:I2CInterface.c ****                 status &= ~(1<<BUSY);								
+ 380               		.loc 1 238 0
+ 381 0154 8091 0000 		lds r24,status
+ 382 0158 8F77      		andi r24,lo8(127)
+ 383 015a 8093 0000 		sts status,r24
+ 384 015e 00C0      		rjmp .L12
+ 385               	.LVL17:
+ 386               	.L19:
+ 239:I2CInterface.c ****             }
+ 240:I2CInterface.c ****             break;
+ 241:I2CInterface.c **** 
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 12
+
+
+ 242:I2CInterface.c ****         case TW_MT_DATA_NACK:							/* Slave didn't acknowledge data */
+ 243:I2CInterface.c ****             /* send the stop condition */
+ 244:I2CInterface.c ****             TWCR |= (1<<TWINT)|(1<<TWSTO);						
+ 387               		.loc 1 244 0
+ 388 0160 86B7      		in r24,0x36
+ 389               	.LVL18:
+ 390 0162 8069      		ori r24,lo8(-112)
+ 391 0164 86BF      		out 0x36,r24
+ 245:I2CInterface.c ****             status &= ~(1<<BUSY);									
+ 392               		.loc 1 245 0
+ 393 0166 8091 0000 		lds r24,status
+ 394 016a 8F77      		andi r24,lo8(127)
+ 395 016c 8093 0000 		sts status,r24
+ 246:I2CInterface.c ****             break;
+ 396               		.loc 1 246 0
+ 397 0170 00C0      		rjmp .L12
+ 398               	.LVL19:
+ 399               	.L20:
+ 247:I2CInterface.c **** 
+ 248:I2CInterface.c ****         case TW_MR_SLA_ACK:                             /* Slave acknowledged address */
+ 249:I2CInterface.c ****             if(--twi_bytes > 0) 
+ 400               		.loc 1 249 0
+ 401 0172 8091 0000 		lds r24,twi_bytes
+ 402               	.LVL20:
+ 403 0176 8150      		subi r24,lo8(-(-1))
+ 404 0178 8093 0000 		sts twi_bytes,r24
+ 405 017c 8823      		tst r24
+ 406 017e 01F0      		breq .L25
+ 250:I2CInterface.c ****             {
+ 251:I2CInterface.c ****                 /* if there is more than one byte to read, acknowledge */
+ 252:I2CInterface.c ****                 TWCR |= (1<<TWEA)|(1<<TWINT);	
+ 407               		.loc 1 252 0
+ 408 0180 86B7      		in r24,0x36
+ 409 0182 806C      		ori r24,lo8(-64)
+ 410 0184 86BF      		out 0x36,r24
+ 411 0186 00C0      		rjmp .L12
+ 412               	.L25:
+ 253:I2CInterface.c ****             }
+ 254:I2CInterface.c **** 			else
+ 255:I2CInterface.c ****             {
+ 256:I2CInterface.c ****                 /* no acknowledge */
+ 257:I2CInterface.c ****                 TWCR |= (1<<TWINT);					
+ 413               		.loc 1 257 0
+ 414 0188 86B7      		in r24,0x36
+ 415 018a 8068      		ori r24,lo8(-128)
+ 416 018c 86BF      		out 0x36,r24
+ 417 018e 00C0      		rjmp .L12
+ 418               	.LVL21:
+ 419               	.L21:
+ 258:I2CInterface.c ****             }
+ 259:I2CInterface.c ****             break;
+ 260:I2CInterface.c **** 
+ 261:I2CInterface.c ****         case TW_MR_DATA_ACK: 							/* Master acknowledged data */
+ 262:I2CInterface.c ****         
+ 263:I2CInterface.c ****             /* grab the received data */
+ 264:I2CInterface.c ****             *twi_data = TWDR;										
+ 420               		.loc 1 264 0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 13
+
+
+ 421 0190 83B1      		in r24,0x3
+ 422               	.LVL22:
+ 423 0192 E091 0000 		lds r30,twi_data
+ 424 0196 F091 0000 		lds r31,twi_data+1
+ 425 019a 8193      		st Z+,r24
+ 265:I2CInterface.c ****             twi_data++;											
+ 426               		.loc 1 265 0
+ 427 019c F093 0000 		sts twi_data+1,r31
+ 428 01a0 E093 0000 		sts twi_data,r30
+ 266:I2CInterface.c ****             if(--twi_bytes > 0) 
+ 429               		.loc 1 266 0
+ 430 01a4 8091 0000 		lds r24,twi_bytes
+ 431 01a8 8150      		subi r24,lo8(-(-1))
+ 432 01aa 8093 0000 		sts twi_bytes,r24
+ 433 01ae 8823      		tst r24
+ 434 01b0 01F0      		breq .L26
+ 267:I2CInterface.c ****             {
+ 268:I2CInterface.c ****                 /* get the next data byte and ack */
+ 269:I2CInterface.c ****                 TWCR |= (1<<TWEA)|(1<<TWINT);	
+ 435               		.loc 1 269 0
+ 436 01b2 86B7      		in r24,0x36
+ 437 01b4 806C      		ori r24,lo8(-64)
+ 438 01b6 86BF      		out 0x36,r24
+ 439 01b8 00C0      		rjmp .L12
+ 440               	.L26:
+ 270:I2CInterface.c ****             }
+ 271:I2CInterface.c ****             else
+ 272:I2CInterface.c ****             {
+ 273:I2CInterface.c ****                 /* clear out the enable acknowledge bit */
+ 274:I2CInterface.c ****                 TWCR &= ~(1<<TWEA);							
+ 441               		.loc 1 274 0
+ 442 01ba 86B7      		in r24,0x36
+ 443 01bc 8F7B      		andi r24,lo8(-65)
+ 444 01be 86BF      		out 0x36,r24
+ 445 01c0 00C0      		rjmp .L12
+ 446               	.LVL23:
+ 447               	.L22:
+ 275:I2CInterface.c ****             }
+ 276:I2CInterface.c ****             break;
+ 277:I2CInterface.c **** 
+ 278:I2CInterface.c ****         case TW_MR_DATA_NACK:						/* Master didn't acknowledge data -> end of read process */
+ 279:I2CInterface.c ****             /* read data, and generate the stop condition */
+ 280:I2CInterface.c ****             *twi_data = TWDR;										
+ 448               		.loc 1 280 0
+ 449 01c2 E091 0000 		lds r30,twi_data
+ 450 01c6 F091 0000 		lds r31,twi_data+1
+ 451 01ca 83B1      		in r24,0x3
+ 452               	.LVL24:
+ 453 01cc 8083      		st Z,r24
+ 281:I2CInterface.c ****             TWCR |= (1<<TWSTO)|(1<<TWINT); 						
+ 454               		.loc 1 281 0
+ 455 01ce 86B7      		in r24,0x36
+ 456 01d0 8069      		ori r24,lo8(-112)
+ 457 01d2 86BF      		out 0x36,r24
+ 282:I2CInterface.c ****             status &= ~(1<<BUSY);											
+ 458               		.loc 1 282 0
+ 459 01d4 8091 0000 		lds r24,status
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 14
+
+
+ 460 01d8 8F77      		andi r24,lo8(127)
+ 461 01da 8093 0000 		sts status,r24
+ 462               	.L12:
+ 463               	/* epilogue start */
+ 283:I2CInterface.c ****             break;
+ 284:I2CInterface.c **** 	}
+ 285:I2CInterface.c **** }
+ 464               		.loc 1 285 0
+ 465 01de FF91      		pop r31
+ 466 01e0 EF91      		pop r30
+ 467 01e2 BF91      		pop r27
+ 468 01e4 AF91      		pop r26
+ 469 01e6 9F91      		pop r25
+ 470 01e8 8F91      		pop r24
+ 471 01ea 0F90      		pop r0
+ 472 01ec 0FBE      		out __SREG__,r0
+ 473 01ee 0F90      		pop r0
+ 474 01f0 1F90      		pop r1
+ 475 01f2 1895      		reti
+ 476               		.cfi_endproc
+ 477               	.LFE4:
+ 478               		.size	__vector_17, .-__vector_17
+ 479               		.local	retry_cnt
+ 480               		.comm	retry_cnt,1,1
+ 481               		.local	status
+ 482               		.comm	status,1,1
+ 483               		.local	twi_bytes
+ 484               		.comm	twi_bytes,1,1
+ 485               		.local	twi_ddr
+ 486               		.comm	twi_ddr,1,1
+ 487               		.local	twi_data
+ 488               		.comm	twi_data,2,1
+ 489               		.local	twi_address
+ 490               		.comm	twi_address,1,1
+ 491               	.Letext0:
+ 492               		.file 2 "c:\\program files (x86)\\atmel\\studio\\7.0\\toolchain\\avr8\\avr8-gnu-toolchain\\avr\\in
+ 493               		.file 3 "CommonDefs.h"
+ 494               		.section	.debug_info,"",@progbits
+ 495               	.Ldebug_info0:
+ 496 0000 E701 0000 		.long	0x1e7
+ 497 0004 0200      		.word	0x2
+ 498 0006 0000 0000 		.long	.Ldebug_abbrev0
+ 499 000a 04        		.byte	0x4
+ 500 000b 01        		.uleb128 0x1
+ 501 000c 0000 0000 		.long	.LASF23
+ 502 0010 0C        		.byte	0xc
+ 503 0011 0000 0000 		.long	.LASF24
+ 504 0015 0000 0000 		.long	.LASF25
+ 505 0019 0000 0000 		.long	.Ltext0
+ 506 001d 0000 0000 		.long	.Letext0
+ 507 0021 0000 0000 		.long	.Ldebug_line0
+ 508 0025 02        		.uleb128 0x2
+ 509 0026 01        		.byte	0x1
+ 510 0027 06        		.byte	0x6
+ 511 0028 0000 0000 		.long	.LASF0
+ 512 002c 03        		.uleb128 0x3
+ 513 002d 0000 0000 		.long	.LASF7
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 15
+
+
+ 514 0031 02        		.byte	0x2
+ 515 0032 7E        		.byte	0x7e
+ 516 0033 3700 0000 		.long	0x37
+ 517 0037 02        		.uleb128 0x2
+ 518 0038 01        		.byte	0x1
+ 519 0039 08        		.byte	0x8
+ 520 003a 0000 0000 		.long	.LASF1
+ 521 003e 04        		.uleb128 0x4
+ 522 003f 02        		.byte	0x2
+ 523 0040 05        		.byte	0x5
+ 524 0041 696E 7400 		.string	"int"
+ 525 0045 02        		.uleb128 0x2
+ 526 0046 02        		.byte	0x2
+ 527 0047 07        		.byte	0x7
+ 528 0048 0000 0000 		.long	.LASF2
+ 529 004c 02        		.uleb128 0x2
+ 530 004d 04        		.byte	0x4
+ 531 004e 05        		.byte	0x5
+ 532 004f 0000 0000 		.long	.LASF3
+ 533 0053 02        		.uleb128 0x2
+ 534 0054 04        		.byte	0x4
+ 535 0055 07        		.byte	0x7
+ 536 0056 0000 0000 		.long	.LASF4
+ 537 005a 02        		.uleb128 0x2
+ 538 005b 08        		.byte	0x8
+ 539 005c 05        		.byte	0x5
+ 540 005d 0000 0000 		.long	.LASF5
+ 541 0061 02        		.uleb128 0x2
+ 542 0062 08        		.byte	0x8
+ 543 0063 07        		.byte	0x7
+ 544 0064 0000 0000 		.long	.LASF6
+ 545 0068 03        		.uleb128 0x3
+ 546 0069 0000 0000 		.long	.LASF8
+ 547 006d 03        		.byte	0x3
+ 548 006e 38        		.byte	0x38
+ 549 006f 3700 0000 		.long	0x37
+ 550 0073 05        		.uleb128 0x5
+ 551 0074 01        		.byte	0x1
+ 552 0075 0000 0000 		.long	.LASF26
+ 553 0079 01        		.byte	0x1
+ 554 007a 55        		.byte	0x55
+ 555 007b 01        		.byte	0x1
+ 556 007c 0000 0000 		.long	.LFB0
+ 557 0080 0000 0000 		.long	.LFE0
+ 558 0084 03        		.byte	0x3
+ 559 0085 92        		.byte	0x92
+ 560 0086 20        		.uleb128 0x20
+ 561 0087 02        		.sleb128 2
+ 562 0088 01        		.byte	0x1
+ 563 0089 06        		.uleb128 0x6
+ 564 008a 01        		.byte	0x1
+ 565 008b 0000 0000 		.long	.LASF12
+ 566 008f 01        		.byte	0x1
+ 567 0090 6C        		.byte	0x6c
+ 568 0091 01        		.byte	0x1
+ 569 0092 0000 0000 		.long	.LFB1
+ 570 0096 0000 0000 		.long	.LFE1
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 16
+
+
+ 571 009a 03        		.byte	0x3
+ 572 009b 92        		.byte	0x92
+ 573 009c 20        		.uleb128 0x20
+ 574 009d 02        		.sleb128 2
+ 575 009e 01        		.byte	0x1
+ 576 009f D200 0000 		.long	0xd2
+ 577 00a3 07        		.uleb128 0x7
+ 578 00a4 0000 0000 		.long	.LASF9
+ 579 00a8 01        		.byte	0x1
+ 580 00a9 6C        		.byte	0x6c
+ 581 00aa 3700 0000 		.long	0x37
+ 582 00ae 0000 0000 		.long	.LLST0
+ 583 00b2 08        		.uleb128 0x8
+ 584 00b3 0000 0000 		.long	.LASF10
+ 585 00b7 01        		.byte	0x1
+ 586 00b8 6C        		.byte	0x6c
+ 587 00b9 D200 0000 		.long	0xd2
+ 588 00bd 06        		.byte	0x6
+ 589 00be 66        		.byte	0x66
+ 590 00bf 93        		.byte	0x93
+ 591 00c0 01        		.uleb128 0x1
+ 592 00c1 67        		.byte	0x67
+ 593 00c2 93        		.byte	0x93
+ 594 00c3 01        		.uleb128 0x1
+ 595 00c4 08        		.uleb128 0x8
+ 596 00c5 0000 0000 		.long	.LASF11
+ 597 00c9 01        		.byte	0x1
+ 598 00ca 6C        		.byte	0x6c
+ 599 00cb 3700 0000 		.long	0x37
+ 600 00cf 01        		.byte	0x1
+ 601 00d0 64        		.byte	0x64
+ 602 00d1 00        		.byte	0
+ 603 00d2 09        		.uleb128 0x9
+ 604 00d3 02        		.byte	0x2
+ 605 00d4 3700 0000 		.long	0x37
+ 606 00d8 06        		.uleb128 0x6
+ 607 00d9 01        		.byte	0x1
+ 608 00da 0000 0000 		.long	.LASF13
+ 609 00de 01        		.byte	0x1
+ 610 00df 8A        		.byte	0x8a
+ 611 00e0 01        		.byte	0x1
+ 612 00e1 0000 0000 		.long	.LFB2
+ 613 00e5 0000 0000 		.long	.LFE2
+ 614 00e9 03        		.byte	0x3
+ 615 00ea 92        		.byte	0x92
+ 616 00eb 20        		.uleb128 0x20
+ 617 00ec 02        		.sleb128 2
+ 618 00ed 01        		.byte	0x1
+ 619 00ee 2101 0000 		.long	0x121
+ 620 00f2 07        		.uleb128 0x7
+ 621 00f3 0000 0000 		.long	.LASF9
+ 622 00f7 01        		.byte	0x1
+ 623 00f8 8A        		.byte	0x8a
+ 624 00f9 3700 0000 		.long	0x37
+ 625 00fd 0000 0000 		.long	.LLST1
+ 626 0101 08        		.uleb128 0x8
+ 627 0102 0000 0000 		.long	.LASF10
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 17
+
+
+ 628 0106 01        		.byte	0x1
+ 629 0107 8A        		.byte	0x8a
+ 630 0108 D200 0000 		.long	0xd2
+ 631 010c 06        		.byte	0x6
+ 632 010d 66        		.byte	0x66
+ 633 010e 93        		.byte	0x93
+ 634 010f 01        		.uleb128 0x1
+ 635 0110 67        		.byte	0x67
+ 636 0111 93        		.byte	0x93
+ 637 0112 01        		.uleb128 0x1
+ 638 0113 08        		.uleb128 0x8
+ 639 0114 0000 0000 		.long	.LASF11
+ 640 0118 01        		.byte	0x1
+ 641 0119 8A        		.byte	0x8a
+ 642 011a 3700 0000 		.long	0x37
+ 643 011e 01        		.byte	0x1
+ 644 011f 64        		.byte	0x64
+ 645 0120 00        		.byte	0
+ 646 0121 0A        		.uleb128 0xa
+ 647 0122 01        		.byte	0x1
+ 648 0123 0000 0000 		.long	.LASF27
+ 649 0127 01        		.byte	0x1
+ 650 0128 A6        		.byte	0xa6
+ 651 0129 01        		.byte	0x1
+ 652 012a 6800 0000 		.long	0x68
+ 653 012e 0000 0000 		.long	.LFB3
+ 654 0132 0000 0000 		.long	.LFE3
+ 655 0136 03        		.byte	0x3
+ 656 0137 92        		.byte	0x92
+ 657 0138 20        		.uleb128 0x20
+ 658 0139 02        		.sleb128 2
+ 659 013a 01        		.byte	0x1
+ 660 013b 4F01 0000 		.long	0x14f
+ 661 013f 0B        		.uleb128 0xb
+ 662 0140 0000 0000 		.long	.LASF15
+ 663 0144 01        		.byte	0x1
+ 664 0145 A8        		.byte	0xa8
+ 665 0146 6800 0000 		.long	0x68
+ 666 014a 0000 0000 		.long	.LLST2
+ 667 014e 00        		.byte	0
+ 668 014f 0C        		.uleb128 0xc
+ 669 0150 01        		.byte	0x1
+ 670 0151 0000 0000 		.long	.LASF14
+ 671 0155 01        		.byte	0x1
+ 672 0156 B9        		.byte	0xb9
+ 673 0157 01        		.byte	0x1
+ 674 0158 0000 0000 		.long	.LFB4
+ 675 015c 0000 0000 		.long	.LFE4
+ 676 0160 0000 0000 		.long	.LLST3
+ 677 0164 01        		.byte	0x1
+ 678 0165 7901 0000 		.long	0x179
+ 679 0169 0B        		.uleb128 0xb
+ 680 016a 0000 0000 		.long	.LASF16
+ 681 016e 01        		.byte	0x1
+ 682 016f BB        		.byte	0xbb
+ 683 0170 3700 0000 		.long	0x37
+ 684 0174 0000 0000 		.long	.LLST4
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 18
+
+
+ 685 0178 00        		.byte	0
+ 686 0179 0D        		.uleb128 0xd
+ 687 017a 0000 0000 		.long	.LASF17
+ 688 017e 01        		.byte	0x1
+ 689 017f 3C        		.byte	0x3c
+ 690 0180 8A01 0000 		.long	0x18a
+ 691 0184 05        		.byte	0x5
+ 692 0185 03        		.byte	0x3
+ 693 0186 0000 0000 		.long	twi_address
+ 694 018a 0E        		.uleb128 0xe
+ 695 018b 3700 0000 		.long	0x37
+ 696 018f 0D        		.uleb128 0xd
+ 697 0190 0000 0000 		.long	.LASF18
+ 698 0194 01        		.byte	0x1
+ 699 0195 3D        		.byte	0x3d
+ 700 0196 A001 0000 		.long	0x1a0
+ 701 019a 05        		.byte	0x5
+ 702 019b 03        		.byte	0x3
+ 703 019c 0000 0000 		.long	twi_data
+ 704 01a0 09        		.uleb128 0x9
+ 705 01a1 02        		.byte	0x2
+ 706 01a2 8A01 0000 		.long	0x18a
+ 707 01a6 0D        		.uleb128 0xd
+ 708 01a7 0000 0000 		.long	.LASF19
+ 709 01ab 01        		.byte	0x1
+ 710 01ac 3E        		.byte	0x3e
+ 711 01ad 8A01 0000 		.long	0x18a
+ 712 01b1 05        		.byte	0x5
+ 713 01b2 03        		.byte	0x3
+ 714 01b3 0000 0000 		.long	twi_ddr
+ 715 01b7 0D        		.uleb128 0xd
+ 716 01b8 0000 0000 		.long	.LASF20
+ 717 01bc 01        		.byte	0x1
+ 718 01bd 3F        		.byte	0x3f
+ 719 01be 8A01 0000 		.long	0x18a
+ 720 01c2 05        		.byte	0x5
+ 721 01c3 03        		.byte	0x3
+ 722 01c4 0000 0000 		.long	twi_bytes
+ 723 01c8 0D        		.uleb128 0xd
+ 724 01c9 0000 0000 		.long	.LASF21
+ 725 01cd 01        		.byte	0x1
+ 726 01ce 40        		.byte	0x40
+ 727 01cf 8A01 0000 		.long	0x18a
+ 728 01d3 05        		.byte	0x5
+ 729 01d4 03        		.byte	0x3
+ 730 01d5 0000 0000 		.long	status
+ 731 01d9 0D        		.uleb128 0xd
+ 732 01da 0000 0000 		.long	.LASF22
+ 733 01de 01        		.byte	0x1
+ 734 01df 41        		.byte	0x41
+ 735 01e0 8A01 0000 		.long	0x18a
+ 736 01e4 05        		.byte	0x5
+ 737 01e5 03        		.byte	0x3
+ 738 01e6 0000 0000 		.long	retry_cnt
+ 739 01ea 00        		.byte	0
+ 740               		.section	.debug_abbrev,"",@progbits
+ 741               	.Ldebug_abbrev0:
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 19
+
+
+ 742 0000 01        		.uleb128 0x1
+ 743 0001 11        		.uleb128 0x11
+ 744 0002 01        		.byte	0x1
+ 745 0003 25        		.uleb128 0x25
+ 746 0004 0E        		.uleb128 0xe
+ 747 0005 13        		.uleb128 0x13
+ 748 0006 0B        		.uleb128 0xb
+ 749 0007 03        		.uleb128 0x3
+ 750 0008 0E        		.uleb128 0xe
+ 751 0009 1B        		.uleb128 0x1b
+ 752 000a 0E        		.uleb128 0xe
+ 753 000b 11        		.uleb128 0x11
+ 754 000c 01        		.uleb128 0x1
+ 755 000d 12        		.uleb128 0x12
+ 756 000e 01        		.uleb128 0x1
+ 757 000f 10        		.uleb128 0x10
+ 758 0010 06        		.uleb128 0x6
+ 759 0011 00        		.byte	0
+ 760 0012 00        		.byte	0
+ 761 0013 02        		.uleb128 0x2
+ 762 0014 24        		.uleb128 0x24
+ 763 0015 00        		.byte	0
+ 764 0016 0B        		.uleb128 0xb
+ 765 0017 0B        		.uleb128 0xb
+ 766 0018 3E        		.uleb128 0x3e
+ 767 0019 0B        		.uleb128 0xb
+ 768 001a 03        		.uleb128 0x3
+ 769 001b 0E        		.uleb128 0xe
+ 770 001c 00        		.byte	0
+ 771 001d 00        		.byte	0
+ 772 001e 03        		.uleb128 0x3
+ 773 001f 16        		.uleb128 0x16
+ 774 0020 00        		.byte	0
+ 775 0021 03        		.uleb128 0x3
+ 776 0022 0E        		.uleb128 0xe
+ 777 0023 3A        		.uleb128 0x3a
+ 778 0024 0B        		.uleb128 0xb
+ 779 0025 3B        		.uleb128 0x3b
+ 780 0026 0B        		.uleb128 0xb
+ 781 0027 49        		.uleb128 0x49
+ 782 0028 13        		.uleb128 0x13
+ 783 0029 00        		.byte	0
+ 784 002a 00        		.byte	0
+ 785 002b 04        		.uleb128 0x4
+ 786 002c 24        		.uleb128 0x24
+ 787 002d 00        		.byte	0
+ 788 002e 0B        		.uleb128 0xb
+ 789 002f 0B        		.uleb128 0xb
+ 790 0030 3E        		.uleb128 0x3e
+ 791 0031 0B        		.uleb128 0xb
+ 792 0032 03        		.uleb128 0x3
+ 793 0033 08        		.uleb128 0x8
+ 794 0034 00        		.byte	0
+ 795 0035 00        		.byte	0
+ 796 0036 05        		.uleb128 0x5
+ 797 0037 2E        		.uleb128 0x2e
+ 798 0038 00        		.byte	0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 20
+
+
+ 799 0039 3F        		.uleb128 0x3f
+ 800 003a 0C        		.uleb128 0xc
+ 801 003b 03        		.uleb128 0x3
+ 802 003c 0E        		.uleb128 0xe
+ 803 003d 3A        		.uleb128 0x3a
+ 804 003e 0B        		.uleb128 0xb
+ 805 003f 3B        		.uleb128 0x3b
+ 806 0040 0B        		.uleb128 0xb
+ 807 0041 27        		.uleb128 0x27
+ 808 0042 0C        		.uleb128 0xc
+ 809 0043 11        		.uleb128 0x11
+ 810 0044 01        		.uleb128 0x1
+ 811 0045 12        		.uleb128 0x12
+ 812 0046 01        		.uleb128 0x1
+ 813 0047 40        		.uleb128 0x40
+ 814 0048 0A        		.uleb128 0xa
+ 815 0049 9742      		.uleb128 0x2117
+ 816 004b 0C        		.uleb128 0xc
+ 817 004c 00        		.byte	0
+ 818 004d 00        		.byte	0
+ 819 004e 06        		.uleb128 0x6
+ 820 004f 2E        		.uleb128 0x2e
+ 821 0050 01        		.byte	0x1
+ 822 0051 3F        		.uleb128 0x3f
+ 823 0052 0C        		.uleb128 0xc
+ 824 0053 03        		.uleb128 0x3
+ 825 0054 0E        		.uleb128 0xe
+ 826 0055 3A        		.uleb128 0x3a
+ 827 0056 0B        		.uleb128 0xb
+ 828 0057 3B        		.uleb128 0x3b
+ 829 0058 0B        		.uleb128 0xb
+ 830 0059 27        		.uleb128 0x27
+ 831 005a 0C        		.uleb128 0xc
+ 832 005b 11        		.uleb128 0x11
+ 833 005c 01        		.uleb128 0x1
+ 834 005d 12        		.uleb128 0x12
+ 835 005e 01        		.uleb128 0x1
+ 836 005f 40        		.uleb128 0x40
+ 837 0060 0A        		.uleb128 0xa
+ 838 0061 9742      		.uleb128 0x2117
+ 839 0063 0C        		.uleb128 0xc
+ 840 0064 01        		.uleb128 0x1
+ 841 0065 13        		.uleb128 0x13
+ 842 0066 00        		.byte	0
+ 843 0067 00        		.byte	0
+ 844 0068 07        		.uleb128 0x7
+ 845 0069 05        		.uleb128 0x5
+ 846 006a 00        		.byte	0
+ 847 006b 03        		.uleb128 0x3
+ 848 006c 0E        		.uleb128 0xe
+ 849 006d 3A        		.uleb128 0x3a
+ 850 006e 0B        		.uleb128 0xb
+ 851 006f 3B        		.uleb128 0x3b
+ 852 0070 0B        		.uleb128 0xb
+ 853 0071 49        		.uleb128 0x49
+ 854 0072 13        		.uleb128 0x13
+ 855 0073 02        		.uleb128 0x2
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 21
+
+
+ 856 0074 06        		.uleb128 0x6
+ 857 0075 00        		.byte	0
+ 858 0076 00        		.byte	0
+ 859 0077 08        		.uleb128 0x8
+ 860 0078 05        		.uleb128 0x5
+ 861 0079 00        		.byte	0
+ 862 007a 03        		.uleb128 0x3
+ 863 007b 0E        		.uleb128 0xe
+ 864 007c 3A        		.uleb128 0x3a
+ 865 007d 0B        		.uleb128 0xb
+ 866 007e 3B        		.uleb128 0x3b
+ 867 007f 0B        		.uleb128 0xb
+ 868 0080 49        		.uleb128 0x49
+ 869 0081 13        		.uleb128 0x13
+ 870 0082 02        		.uleb128 0x2
+ 871 0083 0A        		.uleb128 0xa
+ 872 0084 00        		.byte	0
+ 873 0085 00        		.byte	0
+ 874 0086 09        		.uleb128 0x9
+ 875 0087 0F        		.uleb128 0xf
+ 876 0088 00        		.byte	0
+ 877 0089 0B        		.uleb128 0xb
+ 878 008a 0B        		.uleb128 0xb
+ 879 008b 49        		.uleb128 0x49
+ 880 008c 13        		.uleb128 0x13
+ 881 008d 00        		.byte	0
+ 882 008e 00        		.byte	0
+ 883 008f 0A        		.uleb128 0xa
+ 884 0090 2E        		.uleb128 0x2e
+ 885 0091 01        		.byte	0x1
+ 886 0092 3F        		.uleb128 0x3f
+ 887 0093 0C        		.uleb128 0xc
+ 888 0094 03        		.uleb128 0x3
+ 889 0095 0E        		.uleb128 0xe
+ 890 0096 3A        		.uleb128 0x3a
+ 891 0097 0B        		.uleb128 0xb
+ 892 0098 3B        		.uleb128 0x3b
+ 893 0099 0B        		.uleb128 0xb
+ 894 009a 27        		.uleb128 0x27
+ 895 009b 0C        		.uleb128 0xc
+ 896 009c 49        		.uleb128 0x49
+ 897 009d 13        		.uleb128 0x13
+ 898 009e 11        		.uleb128 0x11
+ 899 009f 01        		.uleb128 0x1
+ 900 00a0 12        		.uleb128 0x12
+ 901 00a1 01        		.uleb128 0x1
+ 902 00a2 40        		.uleb128 0x40
+ 903 00a3 0A        		.uleb128 0xa
+ 904 00a4 9742      		.uleb128 0x2117
+ 905 00a6 0C        		.uleb128 0xc
+ 906 00a7 01        		.uleb128 0x1
+ 907 00a8 13        		.uleb128 0x13
+ 908 00a9 00        		.byte	0
+ 909 00aa 00        		.byte	0
+ 910 00ab 0B        		.uleb128 0xb
+ 911 00ac 34        		.uleb128 0x34
+ 912 00ad 00        		.byte	0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 22
+
+
+ 913 00ae 03        		.uleb128 0x3
+ 914 00af 0E        		.uleb128 0xe
+ 915 00b0 3A        		.uleb128 0x3a
+ 916 00b1 0B        		.uleb128 0xb
+ 917 00b2 3B        		.uleb128 0x3b
+ 918 00b3 0B        		.uleb128 0xb
+ 919 00b4 49        		.uleb128 0x49
+ 920 00b5 13        		.uleb128 0x13
+ 921 00b6 02        		.uleb128 0x2
+ 922 00b7 06        		.uleb128 0x6
+ 923 00b8 00        		.byte	0
+ 924 00b9 00        		.byte	0
+ 925 00ba 0C        		.uleb128 0xc
+ 926 00bb 2E        		.uleb128 0x2e
+ 927 00bc 01        		.byte	0x1
+ 928 00bd 3F        		.uleb128 0x3f
+ 929 00be 0C        		.uleb128 0xc
+ 930 00bf 03        		.uleb128 0x3
+ 931 00c0 0E        		.uleb128 0xe
+ 932 00c1 3A        		.uleb128 0x3a
+ 933 00c2 0B        		.uleb128 0xb
+ 934 00c3 3B        		.uleb128 0x3b
+ 935 00c4 0B        		.uleb128 0xb
+ 936 00c5 27        		.uleb128 0x27
+ 937 00c6 0C        		.uleb128 0xc
+ 938 00c7 11        		.uleb128 0x11
+ 939 00c8 01        		.uleb128 0x1
+ 940 00c9 12        		.uleb128 0x12
+ 941 00ca 01        		.uleb128 0x1
+ 942 00cb 40        		.uleb128 0x40
+ 943 00cc 06        		.uleb128 0x6
+ 944 00cd 9742      		.uleb128 0x2117
+ 945 00cf 0C        		.uleb128 0xc
+ 946 00d0 01        		.uleb128 0x1
+ 947 00d1 13        		.uleb128 0x13
+ 948 00d2 00        		.byte	0
+ 949 00d3 00        		.byte	0
+ 950 00d4 0D        		.uleb128 0xd
+ 951 00d5 34        		.uleb128 0x34
+ 952 00d6 00        		.byte	0
+ 953 00d7 03        		.uleb128 0x3
+ 954 00d8 0E        		.uleb128 0xe
+ 955 00d9 3A        		.uleb128 0x3a
+ 956 00da 0B        		.uleb128 0xb
+ 957 00db 3B        		.uleb128 0x3b
+ 958 00dc 0B        		.uleb128 0xb
+ 959 00dd 49        		.uleb128 0x49
+ 960 00de 13        		.uleb128 0x13
+ 961 00df 02        		.uleb128 0x2
+ 962 00e0 0A        		.uleb128 0xa
+ 963 00e1 00        		.byte	0
+ 964 00e2 00        		.byte	0
+ 965 00e3 0E        		.uleb128 0xe
+ 966 00e4 35        		.uleb128 0x35
+ 967 00e5 00        		.byte	0
+ 968 00e6 49        		.uleb128 0x49
+ 969 00e7 13        		.uleb128 0x13
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 23
+
+
+ 970 00e8 00        		.byte	0
+ 971 00e9 00        		.byte	0
+ 972 00ea 00        		.byte	0
+ 973               		.section	.debug_loc,"",@progbits
+ 974               	.Ldebug_loc0:
+ 975               	.LLST0:
+ 976 0000 0800 0000 		.long	.LVL0-.Ltext0
+ 977 0004 3000 0000 		.long	.LVL1-.Ltext0
+ 978 0008 0100      		.word	0x1
+ 979 000a 68        		.byte	0x68
+ 980 000b 3000 0000 		.long	.LVL1-.Ltext0
+ 981 000f 3E00 0000 		.long	.LFE1-.Ltext0
+ 982 0013 0400      		.word	0x4
+ 983 0015 F3        		.byte	0xf3
+ 984 0016 01        		.uleb128 0x1
+ 985 0017 68        		.byte	0x68
+ 986 0018 9F        		.byte	0x9f
+ 987 0019 0000 0000 		.long	0
+ 988 001d 0000 0000 		.long	0
+ 989               	.LLST1:
+ 990 0021 3E00 0000 		.long	.LVL2-.Ltext0
+ 991 0025 5800 0000 		.long	.LVL3-.Ltext0
+ 992 0029 0100      		.word	0x1
+ 993 002b 68        		.byte	0x68
+ 994 002c 5800 0000 		.long	.LVL3-.Ltext0
+ 995 0030 7000 0000 		.long	.LFE2-.Ltext0
+ 996 0034 0400      		.word	0x4
+ 997 0036 F3        		.byte	0xf3
+ 998 0037 01        		.uleb128 0x1
+ 999 0038 68        		.byte	0x68
+ 1000 0039 9F        		.byte	0x9f
+ 1001 003a 0000 0000 		.long	0
+ 1002 003e 0000 0000 		.long	0
+ 1003               	.LLST2:
+ 1004 0042 7000 0000 		.long	.LVL4-.Ltext0
+ 1005 0046 7400 0000 		.long	.LVL5-.Ltext0
+ 1006 004a 0200      		.word	0x2
+ 1007 004c 30        		.byte	0x30
+ 1008 004d 9F        		.byte	0x9f
+ 1009 004e 7400 0000 		.long	.LVL5-.Ltext0
+ 1010 0052 7A00 0000 		.long	.LVL6-.Ltext0
+ 1011 0056 0700      		.word	0x7
+ 1012 0058 88        		.byte	0x88
+ 1013 0059 00        		.sleb128 0
+ 1014 005a 48        		.byte	0x48
+ 1015 005b 24        		.byte	0x24
+ 1016 005c 30        		.byte	0x30
+ 1017 005d 2D        		.byte	0x2d
+ 1018 005e 9F        		.byte	0x9f
+ 1019 005f 0000 0000 		.long	0
+ 1020 0063 0000 0000 		.long	0
+ 1021               	.LLST3:
+ 1022 0067 7C00 0000 		.long	.LFB4-.Ltext0
+ 1023 006b 7E00 0000 		.long	.LCFI0-.Ltext0
+ 1024 006f 0300      		.word	0x3
+ 1025 0071 92        		.byte	0x92
+ 1026 0072 20        		.uleb128 0x20
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 24
+
+
+ 1027 0073 02        		.sleb128 2
+ 1028 0074 7E00 0000 		.long	.LCFI0-.Ltext0
+ 1029 0078 8000 0000 		.long	.LCFI1-.Ltext0
+ 1030 007c 0300      		.word	0x3
+ 1031 007e 92        		.byte	0x92
+ 1032 007f 20        		.uleb128 0x20
+ 1033 0080 03        		.sleb128 3
+ 1034 0081 8000 0000 		.long	.LCFI1-.Ltext0
+ 1035 0085 8800 0000 		.long	.LCFI2-.Ltext0
+ 1036 0089 0300      		.word	0x3
+ 1037 008b 92        		.byte	0x92
+ 1038 008c 20        		.uleb128 0x20
+ 1039 008d 04        		.sleb128 4
+ 1040 008e 8800 0000 		.long	.LCFI2-.Ltext0
+ 1041 0092 8A00 0000 		.long	.LCFI3-.Ltext0
+ 1042 0096 0300      		.word	0x3
+ 1043 0098 92        		.byte	0x92
+ 1044 0099 20        		.uleb128 0x20
+ 1045 009a 05        		.sleb128 5
+ 1046 009b 8A00 0000 		.long	.LCFI3-.Ltext0
+ 1047 009f 8C00 0000 		.long	.LCFI4-.Ltext0
+ 1048 00a3 0300      		.word	0x3
+ 1049 00a5 92        		.byte	0x92
+ 1050 00a6 20        		.uleb128 0x20
+ 1051 00a7 06        		.sleb128 6
+ 1052 00a8 8C00 0000 		.long	.LCFI4-.Ltext0
+ 1053 00ac 8E00 0000 		.long	.LCFI5-.Ltext0
+ 1054 00b0 0300      		.word	0x3
+ 1055 00b2 92        		.byte	0x92
+ 1056 00b3 20        		.uleb128 0x20
+ 1057 00b4 07        		.sleb128 7
+ 1058 00b5 8E00 0000 		.long	.LCFI5-.Ltext0
+ 1059 00b9 9000 0000 		.long	.LCFI6-.Ltext0
+ 1060 00bd 0300      		.word	0x3
+ 1061 00bf 92        		.byte	0x92
+ 1062 00c0 20        		.uleb128 0x20
+ 1063 00c1 08        		.sleb128 8
+ 1064 00c2 9000 0000 		.long	.LCFI6-.Ltext0
+ 1065 00c6 9200 0000 		.long	.LCFI7-.Ltext0
+ 1066 00ca 0300      		.word	0x3
+ 1067 00cc 92        		.byte	0x92
+ 1068 00cd 20        		.uleb128 0x20
+ 1069 00ce 09        		.sleb128 9
+ 1070 00cf 9200 0000 		.long	.LCFI7-.Ltext0
+ 1071 00d3 F401 0000 		.long	.LFE4-.Ltext0
+ 1072 00d7 0300      		.word	0x3
+ 1073 00d9 92        		.byte	0x92
+ 1074 00da 20        		.uleb128 0x20
+ 1075 00db 0A        		.sleb128 10
+ 1076 00dc 0000 0000 		.long	0
+ 1077 00e0 0000 0000 		.long	0
+ 1078               	.LLST4:
+ 1079 00e4 9400 0000 		.long	.LVL7-.Ltext0
+ 1080 00e8 9800 0000 		.long	.LVL8-.Ltext0
+ 1081 00ec 0600      		.word	0x6
+ 1082 00ee 88        		.byte	0x88
+ 1083 00ef 00        		.sleb128 0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 25
+
+
+ 1084 00f0 09        		.byte	0x9
+ 1085 00f1 F8        		.byte	0xf8
+ 1086 00f2 1A        		.byte	0x1a
+ 1087 00f3 9F        		.byte	0x9f
+ 1088 00f4 9800 0000 		.long	.LVL8-.Ltext0
+ 1089 00f8 9E00 0000 		.long	.LVL9-.Ltext0
+ 1090 00fc 0100      		.word	0x1
+ 1091 00fe 6E        		.byte	0x6e
+ 1092 00ff 9E00 0000 		.long	.LVL9-.Ltext0
+ 1093 0103 B200 0000 		.long	.LVL10-.Ltext0
+ 1094 0107 0100      		.word	0x1
+ 1095 0109 68        		.byte	0x68
+ 1096 010a DE00 0000 		.long	.LVL11-.Ltext0
+ 1097 010e EC00 0000 		.long	.LVL12-.Ltext0
+ 1098 0112 0100      		.word	0x1
+ 1099 0114 68        		.byte	0x68
+ 1100 0115 0801 0000 		.long	.LVL13-.Ltext0
+ 1101 0119 0C01 0000 		.long	.LVL14-.Ltext0
+ 1102 011d 0100      		.word	0x1
+ 1103 011f 68        		.byte	0x68
+ 1104 0120 1A01 0000 		.long	.LVL15-.Ltext0
+ 1105 0124 1E01 0000 		.long	.LVL16-.Ltext0
+ 1106 0128 0100      		.word	0x1
+ 1107 012a 68        		.byte	0x68
+ 1108 012b 6001 0000 		.long	.LVL17-.Ltext0
+ 1109 012f 6201 0000 		.long	.LVL18-.Ltext0
+ 1110 0133 0100      		.word	0x1
+ 1111 0135 68        		.byte	0x68
+ 1112 0136 7201 0000 		.long	.LVL19-.Ltext0
+ 1113 013a 7601 0000 		.long	.LVL20-.Ltext0
+ 1114 013e 0100      		.word	0x1
+ 1115 0140 68        		.byte	0x68
+ 1116 0141 9001 0000 		.long	.LVL21-.Ltext0
+ 1117 0145 9201 0000 		.long	.LVL22-.Ltext0
+ 1118 0149 0100      		.word	0x1
+ 1119 014b 68        		.byte	0x68
+ 1120 014c C201 0000 		.long	.LVL23-.Ltext0
+ 1121 0150 CC01 0000 		.long	.LVL24-.Ltext0
+ 1122 0154 0100      		.word	0x1
+ 1123 0156 68        		.byte	0x68
+ 1124 0157 0000 0000 		.long	0
+ 1125 015b 0000 0000 		.long	0
+ 1126               		.section	.debug_aranges,"",@progbits
+ 1127 0000 1C00 0000 		.long	0x1c
+ 1128 0004 0200      		.word	0x2
+ 1129 0006 0000 0000 		.long	.Ldebug_info0
+ 1130 000a 04        		.byte	0x4
+ 1131 000b 00        		.byte	0
+ 1132 000c 0000      		.word	0
+ 1133 000e 0000      		.word	0
+ 1134 0010 0000 0000 		.long	.Ltext0
+ 1135 0014 F401 0000 		.long	.Letext0-.Ltext0
+ 1136 0018 0000 0000 		.long	0
+ 1137 001c 0000 0000 		.long	0
+ 1138               		.section	.debug_line,"",@progbits
+ 1139               	.Ldebug_line0:
+ 1140 0000 3102 0000 		.section	.debug_str,"MS",@progbits,1
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 26
+
+
+ 1140      0200 9400 
+ 1140      0000 0201 
+ 1140      FB0E 0A00 
+ 1140      0101 0101 
+ 1141               	.LASF16:
+ 1142 0000 5457 495F 		.string	"TWI_status"
+ 1142      7374 6174 
+ 1142      7573 00
+ 1143               	.LASF19:
+ 1144 000b 7477 695F 		.string	"twi_ddr"
+ 1144      6464 7200 
+ 1145               	.LASF17:
+ 1146 0013 7477 695F 		.string	"twi_address"
+ 1146      6164 6472 
+ 1146      6573 7300 
+ 1147               	.LASF27:
+ 1148 001f 4932 4349 		.string	"I2CInt_isI2cBusy"
+ 1148      6E74 5F69 
+ 1148      7349 3263 
+ 1148      4275 7379 
+ 1148      00
+ 1149               	.LASF10:
+ 1150 0030 6461 7461 		.string	"data"
+ 1150      00
+ 1151               	.LASF8:
+ 1152 0035 626F 6F6C 		.string	"bool_t"
+ 1152      5F74 00
+ 1153               	.LASF21:
+ 1154 003c 7374 6174 		.string	"status"
+ 1154      7573 00
+ 1155               	.LASF18:
+ 1156 0043 7477 695F 		.string	"twi_data"
+ 1156      6461 7461 
+ 1156      00
+ 1157               	.LASF15:
+ 1158 004c 7265 7456 		.string	"retVal"
+ 1158      616C 00
+ 1159               	.LASF26:
+ 1160 0053 4932 4349 		.string	"I2CInt_init"
+ 1160      6E74 5F69 
+ 1160      6E69 7400 
+ 1161               	.LASF14:
+ 1162 005f 5F5F 7665 		.string	"__vector_17"
+ 1162      6374 6F72 
+ 1162      5F31 3700 
+ 1163               	.LASF1:
+ 1164 006b 756E 7369 		.string	"unsigned char"
+ 1164      676E 6564 
+ 1164      2063 6861 
+ 1164      7200 
+ 1165               	.LASF4:
+ 1166 0079 6C6F 6E67 		.string	"long unsigned int"
+ 1166      2075 6E73 
+ 1166      6967 6E65 
+ 1166      6420 696E 
+ 1166      7400 
+ 1167               	.LASF25:
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 27
+
+
+ 1168 008b 433A 5C77 		.string	"C:\\workspace\\AVRcam\\MainController"
+ 1168      6F72 6B73 
+ 1168      7061 6365 
+ 1168      5C41 5652 
+ 1168      6361 6D5C 
+ 1169               	.LASF20:
+ 1170 00ae 7477 695F 		.string	"twi_bytes"
+ 1170      6279 7465 
+ 1170      7300 
+ 1171               	.LASF13:
+ 1172 00b8 4932 4349 		.string	"I2CInt_readData"
+ 1172      6E74 5F72 
+ 1172      6561 6444 
+ 1172      6174 6100 
+ 1173               	.LASF24:
+ 1174 00c8 4932 4349 		.string	"I2CInterface.c"
+ 1174      6E74 6572 
+ 1174      6661 6365 
+ 1174      2E63 00
+ 1175               	.LASF2:
+ 1176 00d7 756E 7369 		.string	"unsigned int"
+ 1176      676E 6564 
+ 1176      2069 6E74 
+ 1176      00
+ 1177               	.LASF9:
+ 1178 00e4 6164 6472 		.string	"address"
+ 1178      6573 7300 
+ 1179               	.LASF6:
+ 1180 00ec 6C6F 6E67 		.string	"long long unsigned int"
+ 1180      206C 6F6E 
+ 1180      6720 756E 
+ 1180      7369 676E 
+ 1180      6564 2069 
+ 1181               	.LASF7:
+ 1182 0103 7569 6E74 		.string	"uint8_t"
+ 1182      385F 7400 
+ 1183               	.LASF12:
+ 1184 010b 4932 4349 		.string	"I2CInt_writeData"
+ 1184      6E74 5F77 
+ 1184      7269 7465 
+ 1184      4461 7461 
+ 1184      00
+ 1185               	.LASF5:
+ 1186 011c 6C6F 6E67 		.string	"long long int"
+ 1186      206C 6F6E 
+ 1186      6720 696E 
+ 1186      7400 
+ 1187               	.LASF23:
+ 1188 012a 474E 5520 		.string	"GNU C11 5.4.0 -mn-flash=1 -mno-skip-bug -mmcu=avr4 -g -O1 -funsigned-char -funsigned-bitf
+ 1188      4331 3120 
+ 1188      352E 342E 
+ 1188      3020 2D6D 
+ 1188      6E2D 666C 
+ 1189               	.LASF3:
+ 1190 01a5 6C6F 6E67 		.string	"long int"
+ 1190      2069 6E74 
+ 1190      00
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 28
+
+
+ 1191               	.LASF11:
+ 1192 01ae 6279 7465 		.string	"bytes"
+ 1192      7300 
+ 1193               	.LASF0:
+ 1194 01b4 7369 676E 		.string	"signed char"
+ 1194      6564 2063 
+ 1194      6861 7200 
+ 1195               	.LASF22:
+ 1196 01c0 7265 7472 		.string	"retry_cnt"
+ 1196      795F 636E 
+ 1196      7400 
+ 1197               		.ident	"GCC: (AVR_8_bit_GNU_Toolchain_3.6.0_1734) 5.4.0"
+ 1198               	.global __do_clear_bss
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s 			page 29
+
+
+DEFINED SYMBOLS
+                            *ABS*:00000000 I2CInterface.c
+C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s:2      *ABS*:0000003e __SP_H__
+C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s:3      *ABS*:0000003d __SP_L__
+C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s:4      *ABS*:0000003f __SREG__
+C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s:5      *ABS*:00000000 __tmp_reg__
+C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s:6      *ABS*:00000001 __zero_reg__
+C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s:12     .text:00000000 I2CInt_init
+C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s:32     .text:00000008 I2CInt_writeData
+C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s:480    .bss:00000001 status
+C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s:488    .bss:00000006 twi_address
+C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s:486    .bss:00000004 twi_data
+C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s:482    .bss:00000002 twi_bytes
+C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s:484    .bss:00000003 twi_ddr
+                             .bss:00000000 retry_cnt
+C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s:76     .text:0000003e I2CInt_readData
+C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s:116    .text:00000070 I2CInt_isI2cBusy
+C:\Users\Joe\AppData\Local\Temp\ccTlOKC3.s:139    .text:0000007c __vector_17
+
+UNDEFINED SYMBOLS
+__do_clear_bss

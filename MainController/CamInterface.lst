@@ -1,0 +1,870 @@
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccpPUVBF.s 			page 1
+
+
+   1               		.file	"CamInterface.c"
+   2               	__SP_H__ = 0x3e
+   3               	__SP_L__ = 0x3d
+   4               	__SREG__ = 0x3f
+   5               	__tmp_reg__ = 0
+   6               	__zero_reg__ = 1
+   7               		.text
+   8               	.Ltext0:
+   9               		.cfi_sections	.debug_frame
+  10               	.global	CamInt_init
+  11               		.type	CamInt_init, @function
+  12               	CamInt_init:
+  13               	.LFB4:
+  14               		.file 1 "CamInterface.c"
+   1:CamInterface.c **** /*
+   2:CamInterface.c ****     Copyright (C) 2004    John Orlando
+   3:CamInterface.c ****     
+   4:CamInterface.c ****    AVRcam: a small real-time image processing engine.
+   5:CamInterface.c **** 
+   6:CamInterface.c ****     This program is free software; you can redistribute it and/or
+   7:CamInterface.c ****     modify it under the terms of the GNU General Public
+   8:CamInterface.c ****     License as published by the Free Software Foundation; either
+   9:CamInterface.c ****     version 2 of the License, or (at your option) any later version.
+  10:CamInterface.c **** 
+  11:CamInterface.c ****     This program is distributed in the hope that it will be useful,
+  12:CamInterface.c ****     but WITHOUT ANY WARRANTY; without even the implied warranty of
+  13:CamInterface.c ****     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  14:CamInterface.c ****     General Public License for more details.
+  15:CamInterface.c **** 
+  16:CamInterface.c ****     You should have received a copy of the GNU General Public
+  17:CamInterface.c ****     License along with this program; if not, write to the Free Software
+  18:CamInterface.c ****     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+  19:CamInterface.c **** 
+  20:CamInterface.c ****    For more information on the AVRcam, please contact:
+  21:CamInterface.c **** 
+  22:CamInterface.c ****    john@jrobot.net
+  23:CamInterface.c **** 
+  24:CamInterface.c ****    or go to www.jrobot.net for more details regarding the system.
+  25:CamInterface.c **** */
+  26:CamInterface.c **** /***********************************************************
+  27:CamInterface.c **** 	Module Name: CamInterface.c
+  28:CamInterface.c **** 	Module Date: 04/12/2004
+  29:CamInterface.c **** 	Module Auth: John Orlando
+  30:CamInterface.c **** 	
+  31:CamInterface.c **** 	Description: This file is responsible for providing an
+  32:CamInterface.c **** 	interface to the OV6620 camera hardware.  This includes
+  33:CamInterface.c **** 	an interface to CamInterface.S for certain low-level,
+  34:CamInterface.c **** 	optimized camera access routines.
+  35:CamInterface.c ****     
+  36:CamInterface.c ****     Revision History:
+  37:CamInterface.c ****     Date        Rel Ver.    Notes
+  38:CamInterface.c ****     4/10/2004      0.1     Module created
+  39:CamInterface.c ****     6/30/2004      1.0     Initial release for Circuit Cellar
+  40:CamInterface.c ****                            contest.
+  41:CamInterface.c ****     11/15/2004     1.2     ifdef'd out the resetCam routine, since
+  42:CamInterface.c ****                            resetting the cam now causes the OV6620's
+  43:CamInterface.c ****                            clock to not be output (we have to start
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccpPUVBF.s 			page 2
+
+
+  44:CamInterface.c ****                            it up after each reset with the external
+  45:CamInterface.c ****                            tiny12 processor).
+  46:CamInterface.c ****     1/16/2005      1.4     Ensure that the TCCR1B register is set so
+  47:CamInterface.c ****                            nothing is clocking timer1 at startup.                             
+  48:CamInterface.c **** ***********************************************************/
+  49:CamInterface.c **** 
+  50:CamInterface.c **** /*	Includes */
+  51:CamInterface.c **** #include <avr/interrupt.h>
+  52:CamInterface.c **** #include <avr/signal.h>
+  53:CamInterface.c **** #include <avr/sleep.h>
+  54:CamInterface.c **** #include <avr/eeprom.h>
+  55:CamInterface.c **** #include <stdlib.h>
+  56:CamInterface.c **** #include <string.h>
+  57:CamInterface.c **** #include "CommonDefs.h"
+  58:CamInterface.c **** #include "CamInterface.h"
+  59:CamInterface.c **** #include "Utility.h"
+  60:CamInterface.c **** #include "UIMgr.h"
+  61:CamInterface.c **** #include "Executive.h"
+  62:CamInterface.c **** #include "UartInterface.h"
+  63:CamInterface.c **** 
+  64:CamInterface.c **** /*  Local Variables */
+  65:CamInterface.c **** 
+  66:CamInterface.c **** /* 	Local Structures and Typedefs */
+  67:CamInterface.c **** 
+  68:CamInterface.c **** /*  Definitions */
+  69:CamInterface.c **** //#define OUTPUT_INITIAL_COLOR_MAP 1
+  70:CamInterface.c **** 
+  71:CamInterface.c **** #define FAST_ACQUIRE 1
+  72:CamInterface.c **** #define CAM_G_BUS          	PINB
+  73:CamInterface.c **** #define CAM_G_BUS_DIR      	DDRB
+  74:CamInterface.c **** #define CAM_RB_BUS          PINC
+  75:CamInterface.c **** #define CAM_RB_BUS_DIR 		DDRC
+  76:CamInterface.c **** 
+  77:CamInterface.c **** #define CAM_CONTROL_PORT     PORTD
+  78:CamInterface.c **** #define CAM_CONTROL_PORT_DIR DDRD
+  79:CamInterface.c **** #define CAM_RESET_LINE       BIT7
+  80:CamInterface.c **** #define CAM_PIXEL_CLK_COUNT  BIT5
+  81:CamInterface.c **** #define CAM_HREF             BIT4
+  82:CamInterface.c **** #define CAM_PIXEL_CLK_INT    BIT3
+  83:CamInterface.c **** #define CAM_VSYNC            BIT2
+  84:CamInterface.c **** 
+  85:CamInterface.c **** /*  Global Variables */
+  86:CamInterface.c **** /* NOTE: This file MUST appear first in the Makefile for these variables to
+  87:CamInterface.c **** be placed properly in RAM */
+  88:CamInterface.c **** 
+  89:CamInterface.c **** /* The colorMap[] table provides the membership lookup table to convert 
+  90:CamInterface.c **** RGB or YUV pixel values into actual colors.  The membership table contains
+  91:CamInterface.c **** 16 elements for each color channel, concatenated together.  The Red (or Y)
+  92:CamInterface.c **** value is located in the first 16 bytes, the G (or U) value is located in
+  93:CamInterface.c **** the second 16 bytes, and the B (or V) value is located in the last 16 bytes:
+  94:CamInterface.c **** 
+  95:CamInterface.c ****     ----------------------------------------------------------------------------------
+  96:CamInterface.c ****     |red0|red1|red2|...|red15|green0|green1|green2|...|green15|blue0|blue1|...|blue15|
+  97:CamInterface.c **** mem:|0x00 0x01 0x02     0x15   0x16   0x17   0x18       0x31   0x32  0x33       0x47 |
+  98:CamInterface.c ****     ---------------------------------------------------------------------------------
+  99:CamInterface.c **** Thus, the red lookup is accessed at colorMap+0, the green lookup is accessed 
+ 100:CamInterface.c **** at colorMap+16, and the blue lookup is accessed at colorMap+32.  */	
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccpPUVBF.s 			page 3
+
+
+ 101:CamInterface.c **** unsigned char colorMap[NUM_ELEMENTS_IN_COLOR_MAP] __attribute__ ((section (".noinit")));
+ 102:CamInterface.c **** 
+ 103:CamInterface.c **** /*  Extern Variables */
+ 104:CamInterface.c **** /* These two buffers hold the current and previous lines
+ 105:CamInterface.c **** of pixel data.  They are sized to the worst case scenario,
+ 106:CamInterface.c **** where the color changes between every pixel (unrealistic).
+ 107:CamInterface.c **** The format of each buffer is for all the even bytes to hold
+ 108:CamInterface.c **** the run-length, and the odd bytes to hold the color data. */
+ 109:CamInterface.c **** 
+ 110:CamInterface.c **** /* In addition, if we are in frameDump mode, we use these buffers
+ 111:CamInterface.c **** to store the acquired line data...we are actually grabbing ALL of the
+ 112:CamInterface.c **** pixels in a line (176) instead of the 88 we get normally during tracking.
+ 113:CamInterface.c **** But since we have enough to hold 88-RLE blocks, we already have the 176
+ 114:CamInterface.c **** allocated for this... */
+ 115:CamInterface.c **** unsigned char currentLineBuffer[LENGTH_OF_LINE_BUFFER];
+ 116:CamInterface.c **** unsigned char previousLineBuffer[LENGTH_OF_LINE_BUFFER];
+ 117:CamInterface.c **** 
+ 118:CamInterface.c **** /*  Extern Functions */
+ 119:CamInterface.c **** /* These functions are located in assembly files, and thus
+ 120:CamInterface.c **** must be externed here so they can be referenced in the source below. */
+ 121:CamInterface.c **** extern void CamIntAsm_waitForNewTrackingFrame(unsigned char *pBuffer, unsigned char *pMemLookup);
+ 122:CamInterface.c **** extern void CamIntAsm_waitForNewDumpFrame(unsigned char *pCurrBuffer, unsigned char *pPrevBuffer);
+ 123:CamInterface.c **** extern void CamIntAsm_acquireTrackingLine(unsigned char *pBuffer, unsigned char *pMemLookup);
+ 124:CamInterface.c **** extern void CamIntAsm_acquireDumpLine(unsigned char *pCurrBuffer, unsigned char *pPrevBuffer);
+ 125:CamInterface.c **** 
+ 126:CamInterface.c **** /***********************************************************
+ 127:CamInterface.c **** 	Function Name: CamInt_init
+ 128:CamInterface.c **** 	Function Description: This function is responsible
+ 129:CamInterface.c **** 	for initializing the camera interface.  This includes
+ 130:CamInterface.c **** 	setting up the i/o ports that are used to read the
+ 131:CamInterface.c **** 	camera busses, as well as resetting the camera.
+ 132:CamInterface.c **** 	Inputs:  none
+ 133:CamInterface.c **** 	Outputs: none
+ 134:CamInterface.c **** ***********************************************************/	
+ 135:CamInterface.c **** void CamInt_init(void)
+ 136:CamInterface.c **** {
+  15               		.loc 1 136 0
+  16               		.cfi_startproc
+  17               	/* prologue: function */
+  18               	/* frame size = 0 */
+  19               	/* stack size = 0 */
+  20               	.L__stack_usage = 0
+ 137:CamInterface.c **** #if OUTPUT_INITIAL_COLOR_MAP
+ 138:CamInterface.c **** 	unsigned char asciiBuffer[5];
+ 139:CamInterface.c ****     unsigned char i;
+ 140:CamInterface.c **** #endif    
+ 141:CamInterface.c ****     
+ 142:CamInterface.c **** 	/* set up the mega8 ports that will be interfacing
+ 143:CamInterface.c **** 	with the camera */	
+ 144:CamInterface.c **** 	CAM_CONTROL_PORT_DIR |= (1<<CAM_RESET_LINE); /* cam reset is output */
+  21               		.loc 1 144 0
+  22 0000 8F9A      		sbi 0x11,7
+ 145:CamInterface.c **** 	CAM_CONTROL_PORT_DIR |= 0x80;   /* set just the MSB as an output */
+  23               		.loc 1 145 0
+  24 0002 8F9A      		sbi 0x11,7
+ 146:CamInterface.c **** 	CAM_CONTROL_PORT_DIR &= 0xFB;   /* make sure bit2 is clear (input) */
+  25               		.loc 1 146 0
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccpPUVBF.s 			page 4
+
+
+  26 0004 8A98      		cbi 0x11,2
+ 147:CamInterface.c **** 	CAM_CONTROL_PORT &= 0x7F;   /* set reset line low */
+  27               		.loc 1 147 0
+  28 0006 9798      		cbi 0x12,7
+ 148:CamInterface.c **** 	CAM_G_BUS_DIR &= 0xF0;  /* 4-bit G bus all inputs */
+  29               		.loc 1 148 0
+  30 0008 87B3      		in r24,0x17
+  31 000a 807F      		andi r24,lo8(-16)
+  32 000c 87BB      		out 0x17,r24
+ 149:CamInterface.c ****     CAM_G_BUS_DIR |= 0xF0;  /* disable the pull-up on PB4 and PB5 */
+  33               		.loc 1 149 0
+  34 000e 87B3      		in r24,0x17
+  35 0010 806F      		ori r24,lo8(-16)
+  36 0012 87BB      		out 0x17,r24
+ 150:CamInterface.c **** 	CAM_RB_BUS_DIR &= 0xF0;  /* 4-bit RB bus all inputs */
+  37               		.loc 1 150 0
+  38 0014 84B3      		in r24,0x14
+  39 0016 807F      		andi r24,lo8(-16)
+  40 0018 84BB      		out 0x14,r24
+ 151:CamInterface.c **** 	
+ 152:CamInterface.c ****     /* ensure that timer1 is disabled to start...eventually, when PCLK needs
+ 153:CamInterface.c ****     to feed timer1 through the external counter, it will be enabled on an
+ 154:CamInterface.c ****     "as needed" basis...*/
+ 155:CamInterface.c **** 	TCCR1B &= ~( (1<<CS12)|(1<<CS11)|(1<<CS10) );
+  41               		.loc 1 155 0
+  42 001a 8EB5      		in r24,0x2e
+  43 001c 887F      		andi r24,lo8(-8)
+  44 001e 8EBD      		out 0x2e,r24
+ 156:CamInterface.c **** 	
+ 157:CamInterface.c **** 	/* we'll turn on the interrupt after we assign the initial TCNT value */
+ 158:CamInterface.c **** 	
+ 159:CamInterface.c **** 	/* set up External Interrupt1 to interrupt us on rising edges (HREF)...
+ 160:CamInterface.c **** 	this is needed to indicate when the first pixel of each line is about to start, so
+ 161:CamInterface.c **** 	we can synch up with it...this interrupt will be disabled once HREF goes high */
+ 162:CamInterface.c **** 	
+ 163:CamInterface.c **** 	MCUCR |= (1<<ISC11) | (1<<ISC10);  /* rising edge interrupt */
+  45               		.loc 1 163 0
+  46 0020 85B7      		in r24,0x35
+  47 0022 8C60      		ori r24,lo8(12)
+  48 0024 85BF      		out 0x35,r24
+ 164:CamInterface.c **** 	/* the interrupt will be enabled when we are ready to detect the rising edge of
+ 165:CamInterface.c **** 	HREF...its now primed and ready to go */
+ 166:CamInterface.c **** 	
+ 167:CamInterface.c **** 	/* set up External Interrupt0 to interrupt us on rising edges (VSYNC) */
+ 168:CamInterface.c **** 	MCUCR |= (1<<ISC01) | (1<<ISC00);	/* rising edge interrupt */ 
+  49               		.loc 1 168 0
+  50 0026 85B7      		in r24,0x35
+  51 0028 8360      		ori r24,lo8(3)
+  52 002a 85BF      		out 0x35,r24
+ 169:CamInterface.c **** 	GICR  |= (1<<INT0);    /* interrupt request enabled */
+  53               		.loc 1 169 0
+  54 002c 8BB7      		in r24,0x3b
+  55 002e 8064      		ori r24,lo8(64)
+  56 0030 8BBF      		out 0x3b,r24
+ 170:CamInterface.c **** 	
+ 171:CamInterface.c **** 	/* set up TimerO to count and be clocked from an external pulse source
+ 172:CamInterface.c **** 	(HREF) on falling edges...eventually, we need to enable the interrupt
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccpPUVBF.s 			page 5
+
+
+ 173:CamInterface.c **** 	for this!  FIX THIS */
+ 174:CamInterface.c **** 	TCCR0 = (1<<CS02)|(1<<CS01)|(0<<CS00);
+  57               		.loc 1 174 0
+  58 0032 86E0      		ldi r24,lo8(6)
+  59 0034 83BF      		out 0x33,r24
+ 175:CamInterface.c **** 	
+ 176:CamInterface.c **** 	/* setting up the PCLK counter with Timer1 will be done right after
+ 177:CamInterface.c **** 	we start receiving pixels in each line...we sacrifice the first pixel
+ 178:CamInterface.c **** 	in each line, but we'll account for it...*/
+ 179:CamInterface.c **** 	
+ 180:CamInterface.c **** 	/* set up the mega8 so that its sleep mode puts it in an IDLE sleep
+ 181:CamInterface.c **** 	mode, where it can wake up as fast as possible */
+ 182:CamInterface.c **** 	set_sleep_mode(SLEEP_MODE_IDLE);
+  60               		.loc 1 182 0
+  61 0036 85B7      		in r24,0x35
+  62 0038 8F78      		andi r24,lo8(-113)
+  63 003a 85BF      		out 0x35,r24
+ 183:CamInterface.c **** 	/* umm....we need to actually enable the sleep mode...*/
+ 184:CamInterface.c **** 	MCUCR |= 0x80;
+  64               		.loc 1 184 0
+  65 003c 85B7      		in r24,0x35
+  66 003e 8068      		ori r24,lo8(-128)
+  67 0040 85BF      		out 0x35,r24
+ 185:CamInterface.c **** 	
+ 186:CamInterface.c **** 	/* initialize the memLookup table */
+ 187:CamInterface.c **** 	memset(colorMap,0x00,NUM_ELEMENTS_IN_COLOR_MAP);   
+  68               		.loc 1 187 0
+  69 0042 80E3      		ldi r24,lo8(48)
+  70 0044 E0E0      		ldi r30,lo8(colorMap)
+  71 0046 F0E0      		ldi r31,hi8(colorMap)
+  72 0048 DF01      		movw r26,r30
+  73               		0:
+  74 004a 1D92      		st X+,__zero_reg__
+  75 004c 8A95      		dec r24
+  76 004e 01F4      		brne 0b
+ 188:CamInterface.c **** 	
+ 189:CamInterface.c **** 	/* read the color map out of EEPROM */
+ 190:CamInterface.c **** 	eeprom_read_block(colorMap, (unsigned char*)0x01,NUM_ELEMENTS_IN_COLOR_MAP);
+  77               		.loc 1 190 0
+  78 0050 40E3      		ldi r20,lo8(48)
+  79 0052 50E0      		ldi r21,0
+  80 0054 61E0      		ldi r22,lo8(1)
+  81 0056 70E0      		ldi r23,0
+  82 0058 CF01      		movw r24,r30
+  83 005a 00D0      		rcall eeprom_read_block
+  84               	.LVL0:
+  85 005c 0895      		ret
+  86               		.cfi_endproc
+  87               	.LFE4:
+  88               		.size	CamInt_init, .-CamInt_init
+  89               	.global	CamInt_resetCam
+  90               		.type	CamInt_resetCam, @function
+  91               	CamInt_resetCam:
+  92               	.LFB5:
+ 191:CamInterface.c **** 
+ 192:CamInterface.c **** #if OUTPUT_INITIAL_COLOR_MAP    
+ 193:CamInterface.c ****     UIMgr_txBuffer("\r\n",2);
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccpPUVBF.s 			page 6
+
+
+ 194:CamInterface.c ****     for (i=0; i<NUM_ELEMENTS_IN_COLOR_MAP; i++)
+ 195:CamInterface.c **** 	{
+ 196:CamInterface.c **** 		memset(asciiBuffer,0x00,5);
+ 197:CamInterface.c **** 		itoa(colorMap[i],asciiBuffer,10);
+ 198:CamInterface.c **** 		UIMgr_txBuffer(asciiBuffer,3);
+ 199:CamInterface.c **** 		UIMgr_txBuffer(" ",1);
+ 200:CamInterface.c **** 		if (i==15 || i == 31)
+ 201:CamInterface.c **** 		{
+ 202:CamInterface.c **** 			/* break up the output */
+ 203:CamInterface.c **** 			UIMgr_txBuffer("\r\n",2);
+ 204:CamInterface.c **** 		}
+ 205:CamInterface.c **** 	}
+ 206:CamInterface.c **** #endif    
+ 207:CamInterface.c **** 
+ 208:CamInterface.c **** #ifndef NO_CRYSTAL
+ 209:CamInterface.c **** 	CamInt_resetCam();	
+ 210:CamInterface.c **** #endif    
+ 211:CamInterface.c **** }
+ 212:CamInterface.c **** 
+ 213:CamInterface.c **** /***********************************************************
+ 214:CamInterface.c **** 	Function Name: CamInt_resetCam
+ 215:CamInterface.c **** 	Function Description: This function is responsible
+ 216:CamInterface.c **** 	for resetting the camera.  This is accomplished by
+ 217:CamInterface.c **** 	toggling the reset line on the OV6620 for ~100 mS.
+ 218:CamInterface.c **** 	Inputs:  none
+ 219:CamInterface.c **** 	Outputs: none
+ 220:CamInterface.c ****     IMPORTANT NOTE: This function has effectively been removed
+ 221:CamInterface.c ****     since resetting the camera now causes the camera to not
+ 222:CamInterface.c ****     output the clock signal.  Thus, if we reset the cam, the
+ 223:CamInterface.c ****     AVR has no clock, and thus doesn't run...
+ 224:CamInterface.c **** ***********************************************************/	
+ 225:CamInterface.c **** void CamInt_resetCam(void)
+ 226:CamInterface.c **** {
+  93               		.loc 1 226 0
+  94               		.cfi_startproc
+  95               	/* prologue: function */
+  96               	/* frame size = 0 */
+  97               	/* stack size = 0 */
+  98               	.L__stack_usage = 0
+  99 005e 0895      		ret
+ 100               		.cfi_endproc
+ 101               	.LFE5:
+ 102               		.size	CamInt_resetCam, .-CamInt_resetCam
+ 103               		.comm	previousLineBuffer,176,1
+ 104               		.comm	currentLineBuffer,176,1
+ 105               	.global	colorMap
+ 106               		.section	.noinit,"aw",@nobits
+ 107               		.type	colorMap, @object
+ 108               		.size	colorMap, 48
+ 109               	colorMap:
+ 110 0000 0000 0000 		.zero	48
+ 110      0000 0000 
+ 110      0000 0000 
+ 110      0000 0000 
+ 110      0000 0000 
+ 111               		.text
+ 112               	.Letext0:
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccpPUVBF.s 			page 7
+
+
+ 113               		.file 2 "c:\\program files (x86)\\atmel\\studio\\7.0\\toolchain\\avr8\\avr8-gnu-toolchain\\avr\\in
+ 114               		.file 3 "c:\\program files (x86)\\atmel\\studio\\7.0\\toolchain\\avr8\\avr8-gnu-toolchain\\avr\\in
+ 115               		.section	.debug_info,"",@progbits
+ 116               	.Ldebug_info0:
+ 117 0000 3401 0000 		.long	0x134
+ 118 0004 0200      		.word	0x2
+ 119 0006 0000 0000 		.long	.Ldebug_abbrev0
+ 120 000a 04        		.byte	0x4
+ 121 000b 01        		.uleb128 0x1
+ 122 000c 0000 0000 		.long	.LASF12
+ 123 0010 0C        		.byte	0xc
+ 124 0011 0000 0000 		.long	.LASF13
+ 125 0015 0000 0000 		.long	.LASF14
+ 126 0019 0000 0000 		.long	.Ltext0
+ 127 001d 0000 0000 		.long	.Letext0
+ 128 0021 0000 0000 		.long	.Ldebug_line0
+ 129 0025 02        		.uleb128 0x2
+ 130 0026 01        		.byte	0x1
+ 131 0027 06        		.byte	0x6
+ 132 0028 0000 0000 		.long	.LASF0
+ 133 002c 03        		.uleb128 0x3
+ 134 002d 0000 0000 		.long	.LASF15
+ 135 0031 02        		.byte	0x2
+ 136 0032 7E        		.byte	0x7e
+ 137 0033 3700 0000 		.long	0x37
+ 138 0037 02        		.uleb128 0x2
+ 139 0038 01        		.byte	0x1
+ 140 0039 08        		.byte	0x8
+ 141 003a 0000 0000 		.long	.LASF1
+ 142 003e 04        		.uleb128 0x4
+ 143 003f 02        		.byte	0x2
+ 144 0040 05        		.byte	0x5
+ 145 0041 696E 7400 		.string	"int"
+ 146 0045 02        		.uleb128 0x2
+ 147 0046 02        		.byte	0x2
+ 148 0047 07        		.byte	0x7
+ 149 0048 0000 0000 		.long	.LASF2
+ 150 004c 02        		.uleb128 0x2
+ 151 004d 04        		.byte	0x4
+ 152 004e 05        		.byte	0x5
+ 153 004f 0000 0000 		.long	.LASF3
+ 154 0053 02        		.uleb128 0x2
+ 155 0054 04        		.byte	0x4
+ 156 0055 07        		.byte	0x7
+ 157 0056 0000 0000 		.long	.LASF4
+ 158 005a 02        		.uleb128 0x2
+ 159 005b 08        		.byte	0x8
+ 160 005c 05        		.byte	0x5
+ 161 005d 0000 0000 		.long	.LASF5
+ 162 0061 02        		.uleb128 0x2
+ 163 0062 08        		.byte	0x8
+ 164 0063 07        		.byte	0x7
+ 165 0064 0000 0000 		.long	.LASF6
+ 166 0068 02        		.uleb128 0x2
+ 167 0069 04        		.byte	0x4
+ 168 006a 04        		.byte	0x4
+ 169 006b 0000 0000 		.long	.LASF7
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccpPUVBF.s 			page 8
+
+
+ 170 006f 05        		.uleb128 0x5
+ 171 0070 01        		.byte	0x1
+ 172 0071 0000 0000 		.long	.LASF16
+ 173 0075 01        		.byte	0x1
+ 174 0076 87        		.byte	0x87
+ 175 0077 01        		.byte	0x1
+ 176 0078 0000 0000 		.long	.LFB4
+ 177 007c 0000 0000 		.long	.LFE4
+ 178 0080 03        		.byte	0x3
+ 179 0081 92        		.byte	0x92
+ 180 0082 20        		.uleb128 0x20
+ 181 0083 02        		.sleb128 2
+ 182 0084 01        		.byte	0x1
+ 183 0085 B700 0000 		.long	0xb7
+ 184 0089 06        		.uleb128 0x6
+ 185 008a 0000 0000 		.long	.LVL0
+ 186 008e 2A01 0000 		.long	0x12a
+ 187 0092 07        		.uleb128 0x7
+ 188 0093 06        		.byte	0x6
+ 189 0094 68        		.byte	0x68
+ 190 0095 93        		.byte	0x93
+ 191 0096 01        		.uleb128 0x1
+ 192 0097 69        		.byte	0x69
+ 193 0098 93        		.byte	0x93
+ 194 0099 01        		.uleb128 0x1
+ 195 009a 05        		.byte	0x5
+ 196 009b 03        		.byte	0x3
+ 197 009c 0000 0000 		.long	colorMap
+ 198 00a0 07        		.uleb128 0x7
+ 199 00a1 06        		.byte	0x6
+ 200 00a2 66        		.byte	0x66
+ 201 00a3 93        		.byte	0x93
+ 202 00a4 01        		.uleb128 0x1
+ 203 00a5 67        		.byte	0x67
+ 204 00a6 93        		.byte	0x93
+ 205 00a7 01        		.uleb128 0x1
+ 206 00a8 01        		.byte	0x1
+ 207 00a9 31        		.byte	0x31
+ 208 00aa 07        		.uleb128 0x7
+ 209 00ab 06        		.byte	0x6
+ 210 00ac 64        		.byte	0x64
+ 211 00ad 93        		.byte	0x93
+ 212 00ae 01        		.uleb128 0x1
+ 213 00af 65        		.byte	0x65
+ 214 00b0 93        		.byte	0x93
+ 215 00b1 01        		.uleb128 0x1
+ 216 00b2 02        		.byte	0x2
+ 217 00b3 08        		.byte	0x8
+ 218 00b4 30        		.byte	0x30
+ 219 00b5 00        		.byte	0
+ 220 00b6 00        		.byte	0
+ 221 00b7 08        		.uleb128 0x8
+ 222 00b8 01        		.byte	0x1
+ 223 00b9 0000 0000 		.long	.LASF17
+ 224 00bd 01        		.byte	0x1
+ 225 00be E1        		.byte	0xe1
+ 226 00bf 01        		.byte	0x1
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccpPUVBF.s 			page 9
+
+
+ 227 00c0 0000 0000 		.long	.LFB5
+ 228 00c4 0000 0000 		.long	.LFE5
+ 229 00c8 03        		.byte	0x3
+ 230 00c9 92        		.byte	0x92
+ 231 00ca 20        		.uleb128 0x20
+ 232 00cb 02        		.sleb128 2
+ 233 00cc 01        		.byte	0x1
+ 234 00cd 09        		.uleb128 0x9
+ 235 00ce 3700 0000 		.long	0x37
+ 236 00d2 DD00 0000 		.long	0xdd
+ 237 00d6 0A        		.uleb128 0xa
+ 238 00d7 DD00 0000 		.long	0xdd
+ 239 00db AF        		.byte	0xaf
+ 240 00dc 00        		.byte	0
+ 241 00dd 02        		.uleb128 0x2
+ 242 00de 02        		.byte	0x2
+ 243 00df 07        		.byte	0x7
+ 244 00e0 0000 0000 		.long	.LASF8
+ 245 00e4 0B        		.uleb128 0xb
+ 246 00e5 0000 0000 		.long	.LASF9
+ 247 00e9 01        		.byte	0x1
+ 248 00ea 73        		.byte	0x73
+ 249 00eb CD00 0000 		.long	0xcd
+ 250 00ef 01        		.byte	0x1
+ 251 00f0 05        		.byte	0x5
+ 252 00f1 03        		.byte	0x3
+ 253 00f2 0000 0000 		.long	currentLineBuffer
+ 254 00f6 0B        		.uleb128 0xb
+ 255 00f7 0000 0000 		.long	.LASF10
+ 256 00fb 01        		.byte	0x1
+ 257 00fc 74        		.byte	0x74
+ 258 00fd CD00 0000 		.long	0xcd
+ 259 0101 01        		.byte	0x1
+ 260 0102 05        		.byte	0x5
+ 261 0103 03        		.byte	0x3
+ 262 0104 0000 0000 		.long	previousLineBuffer
+ 263 0108 09        		.uleb128 0x9
+ 264 0109 3700 0000 		.long	0x37
+ 265 010d 1801 0000 		.long	0x118
+ 266 0111 0A        		.uleb128 0xa
+ 267 0112 DD00 0000 		.long	0xdd
+ 268 0116 2F        		.byte	0x2f
+ 269 0117 00        		.byte	0
+ 270 0118 0B        		.uleb128 0xb
+ 271 0119 0000 0000 		.long	.LASF11
+ 272 011d 01        		.byte	0x1
+ 273 011e 65        		.byte	0x65
+ 274 011f 0801 0000 		.long	0x108
+ 275 0123 01        		.byte	0x1
+ 276 0124 05        		.byte	0x5
+ 277 0125 03        		.byte	0x3
+ 278 0126 0000 0000 		.long	colorMap
+ 279 012a 0C        		.uleb128 0xc
+ 280 012b 01        		.byte	0x1
+ 281 012c 01        		.byte	0x1
+ 282 012d 0000 0000 		.long	.LASF18
+ 283 0131 0000 0000 		.long	.LASF18
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccpPUVBF.s 			page 10
+
+
+ 284 0135 03        		.byte	0x3
+ 285 0136 9E        		.byte	0x9e
+ 286 0137 00        		.byte	0
+ 287               		.section	.debug_abbrev,"",@progbits
+ 288               	.Ldebug_abbrev0:
+ 289 0000 01        		.uleb128 0x1
+ 290 0001 11        		.uleb128 0x11
+ 291 0002 01        		.byte	0x1
+ 292 0003 25        		.uleb128 0x25
+ 293 0004 0E        		.uleb128 0xe
+ 294 0005 13        		.uleb128 0x13
+ 295 0006 0B        		.uleb128 0xb
+ 296 0007 03        		.uleb128 0x3
+ 297 0008 0E        		.uleb128 0xe
+ 298 0009 1B        		.uleb128 0x1b
+ 299 000a 0E        		.uleb128 0xe
+ 300 000b 11        		.uleb128 0x11
+ 301 000c 01        		.uleb128 0x1
+ 302 000d 12        		.uleb128 0x12
+ 303 000e 01        		.uleb128 0x1
+ 304 000f 10        		.uleb128 0x10
+ 305 0010 06        		.uleb128 0x6
+ 306 0011 00        		.byte	0
+ 307 0012 00        		.byte	0
+ 308 0013 02        		.uleb128 0x2
+ 309 0014 24        		.uleb128 0x24
+ 310 0015 00        		.byte	0
+ 311 0016 0B        		.uleb128 0xb
+ 312 0017 0B        		.uleb128 0xb
+ 313 0018 3E        		.uleb128 0x3e
+ 314 0019 0B        		.uleb128 0xb
+ 315 001a 03        		.uleb128 0x3
+ 316 001b 0E        		.uleb128 0xe
+ 317 001c 00        		.byte	0
+ 318 001d 00        		.byte	0
+ 319 001e 03        		.uleb128 0x3
+ 320 001f 16        		.uleb128 0x16
+ 321 0020 00        		.byte	0
+ 322 0021 03        		.uleb128 0x3
+ 323 0022 0E        		.uleb128 0xe
+ 324 0023 3A        		.uleb128 0x3a
+ 325 0024 0B        		.uleb128 0xb
+ 326 0025 3B        		.uleb128 0x3b
+ 327 0026 0B        		.uleb128 0xb
+ 328 0027 49        		.uleb128 0x49
+ 329 0028 13        		.uleb128 0x13
+ 330 0029 00        		.byte	0
+ 331 002a 00        		.byte	0
+ 332 002b 04        		.uleb128 0x4
+ 333 002c 24        		.uleb128 0x24
+ 334 002d 00        		.byte	0
+ 335 002e 0B        		.uleb128 0xb
+ 336 002f 0B        		.uleb128 0xb
+ 337 0030 3E        		.uleb128 0x3e
+ 338 0031 0B        		.uleb128 0xb
+ 339 0032 03        		.uleb128 0x3
+ 340 0033 08        		.uleb128 0x8
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccpPUVBF.s 			page 11
+
+
+ 341 0034 00        		.byte	0
+ 342 0035 00        		.byte	0
+ 343 0036 05        		.uleb128 0x5
+ 344 0037 2E        		.uleb128 0x2e
+ 345 0038 01        		.byte	0x1
+ 346 0039 3F        		.uleb128 0x3f
+ 347 003a 0C        		.uleb128 0xc
+ 348 003b 03        		.uleb128 0x3
+ 349 003c 0E        		.uleb128 0xe
+ 350 003d 3A        		.uleb128 0x3a
+ 351 003e 0B        		.uleb128 0xb
+ 352 003f 3B        		.uleb128 0x3b
+ 353 0040 0B        		.uleb128 0xb
+ 354 0041 27        		.uleb128 0x27
+ 355 0042 0C        		.uleb128 0xc
+ 356 0043 11        		.uleb128 0x11
+ 357 0044 01        		.uleb128 0x1
+ 358 0045 12        		.uleb128 0x12
+ 359 0046 01        		.uleb128 0x1
+ 360 0047 40        		.uleb128 0x40
+ 361 0048 0A        		.uleb128 0xa
+ 362 0049 9742      		.uleb128 0x2117
+ 363 004b 0C        		.uleb128 0xc
+ 364 004c 01        		.uleb128 0x1
+ 365 004d 13        		.uleb128 0x13
+ 366 004e 00        		.byte	0
+ 367 004f 00        		.byte	0
+ 368 0050 06        		.uleb128 0x6
+ 369 0051 8982 01   		.uleb128 0x4109
+ 370 0054 01        		.byte	0x1
+ 371 0055 11        		.uleb128 0x11
+ 372 0056 01        		.uleb128 0x1
+ 373 0057 31        		.uleb128 0x31
+ 374 0058 13        		.uleb128 0x13
+ 375 0059 00        		.byte	0
+ 376 005a 00        		.byte	0
+ 377 005b 07        		.uleb128 0x7
+ 378 005c 8A82 01   		.uleb128 0x410a
+ 379 005f 00        		.byte	0
+ 380 0060 02        		.uleb128 0x2
+ 381 0061 0A        		.uleb128 0xa
+ 382 0062 9142      		.uleb128 0x2111
+ 383 0064 0A        		.uleb128 0xa
+ 384 0065 00        		.byte	0
+ 385 0066 00        		.byte	0
+ 386 0067 08        		.uleb128 0x8
+ 387 0068 2E        		.uleb128 0x2e
+ 388 0069 00        		.byte	0
+ 389 006a 3F        		.uleb128 0x3f
+ 390 006b 0C        		.uleb128 0xc
+ 391 006c 03        		.uleb128 0x3
+ 392 006d 0E        		.uleb128 0xe
+ 393 006e 3A        		.uleb128 0x3a
+ 394 006f 0B        		.uleb128 0xb
+ 395 0070 3B        		.uleb128 0x3b
+ 396 0071 0B        		.uleb128 0xb
+ 397 0072 27        		.uleb128 0x27
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccpPUVBF.s 			page 12
+
+
+ 398 0073 0C        		.uleb128 0xc
+ 399 0074 11        		.uleb128 0x11
+ 400 0075 01        		.uleb128 0x1
+ 401 0076 12        		.uleb128 0x12
+ 402 0077 01        		.uleb128 0x1
+ 403 0078 40        		.uleb128 0x40
+ 404 0079 0A        		.uleb128 0xa
+ 405 007a 9742      		.uleb128 0x2117
+ 406 007c 0C        		.uleb128 0xc
+ 407 007d 00        		.byte	0
+ 408 007e 00        		.byte	0
+ 409 007f 09        		.uleb128 0x9
+ 410 0080 01        		.uleb128 0x1
+ 411 0081 01        		.byte	0x1
+ 412 0082 49        		.uleb128 0x49
+ 413 0083 13        		.uleb128 0x13
+ 414 0084 01        		.uleb128 0x1
+ 415 0085 13        		.uleb128 0x13
+ 416 0086 00        		.byte	0
+ 417 0087 00        		.byte	0
+ 418 0088 0A        		.uleb128 0xa
+ 419 0089 21        		.uleb128 0x21
+ 420 008a 00        		.byte	0
+ 421 008b 49        		.uleb128 0x49
+ 422 008c 13        		.uleb128 0x13
+ 423 008d 2F        		.uleb128 0x2f
+ 424 008e 0B        		.uleb128 0xb
+ 425 008f 00        		.byte	0
+ 426 0090 00        		.byte	0
+ 427 0091 0B        		.uleb128 0xb
+ 428 0092 34        		.uleb128 0x34
+ 429 0093 00        		.byte	0
+ 430 0094 03        		.uleb128 0x3
+ 431 0095 0E        		.uleb128 0xe
+ 432 0096 3A        		.uleb128 0x3a
+ 433 0097 0B        		.uleb128 0xb
+ 434 0098 3B        		.uleb128 0x3b
+ 435 0099 0B        		.uleb128 0xb
+ 436 009a 49        		.uleb128 0x49
+ 437 009b 13        		.uleb128 0x13
+ 438 009c 3F        		.uleb128 0x3f
+ 439 009d 0C        		.uleb128 0xc
+ 440 009e 02        		.uleb128 0x2
+ 441 009f 0A        		.uleb128 0xa
+ 442 00a0 00        		.byte	0
+ 443 00a1 00        		.byte	0
+ 444 00a2 0C        		.uleb128 0xc
+ 445 00a3 2E        		.uleb128 0x2e
+ 446 00a4 00        		.byte	0
+ 447 00a5 3F        		.uleb128 0x3f
+ 448 00a6 0C        		.uleb128 0xc
+ 449 00a7 3C        		.uleb128 0x3c
+ 450 00a8 0C        		.uleb128 0xc
+ 451 00a9 8740      		.uleb128 0x2007
+ 452 00ab 0E        		.uleb128 0xe
+ 453 00ac 03        		.uleb128 0x3
+ 454 00ad 0E        		.uleb128 0xe
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccpPUVBF.s 			page 13
+
+
+ 455 00ae 3A        		.uleb128 0x3a
+ 456 00af 0B        		.uleb128 0xb
+ 457 00b0 3B        		.uleb128 0x3b
+ 458 00b1 0B        		.uleb128 0xb
+ 459 00b2 00        		.byte	0
+ 460 00b3 00        		.byte	0
+ 461 00b4 00        		.byte	0
+ 462               		.section	.debug_aranges,"",@progbits
+ 463 0000 1C00 0000 		.long	0x1c
+ 464 0004 0200      		.word	0x2
+ 465 0006 0000 0000 		.long	.Ldebug_info0
+ 466 000a 04        		.byte	0x4
+ 467 000b 00        		.byte	0
+ 468 000c 0000      		.word	0
+ 469 000e 0000      		.word	0
+ 470 0010 0000 0000 		.long	.Ltext0
+ 471 0014 6000 0000 		.long	.Letext0-.Ltext0
+ 472 0018 0000 0000 		.long	0
+ 473 001c 0000 0000 		.long	0
+ 474               		.section	.debug_line,"",@progbits
+ 475               	.Ldebug_line0:
+ 476 0000 6701 0000 		.section	.debug_str,"MS",@progbits,1
+ 476      0200 EA00 
+ 476      0000 0201 
+ 476      FB0E 0A00 
+ 476      0101 0101 
+ 477               	.LASF17:
+ 478 0000 4361 6D49 		.string	"CamInt_resetCam"
+ 478      6E74 5F72 
+ 478      6573 6574 
+ 478      4361 6D00 
+ 479               	.LASF9:
+ 480 0010 6375 7272 		.string	"currentLineBuffer"
+ 480      656E 744C 
+ 480      696E 6542 
+ 480      7566 6665 
+ 480      7200 
+ 481               	.LASF1:
+ 482 0022 756E 7369 		.string	"unsigned char"
+ 482      676E 6564 
+ 482      2063 6861 
+ 482      7200 
+ 483               	.LASF4:
+ 484 0030 6C6F 6E67 		.string	"long unsigned int"
+ 484      2075 6E73 
+ 484      6967 6E65 
+ 484      6420 696E 
+ 484      7400 
+ 485               	.LASF10:
+ 486 0042 7072 6576 		.string	"previousLineBuffer"
+ 486      696F 7573 
+ 486      4C69 6E65 
+ 486      4275 6666 
+ 486      6572 00
+ 487               	.LASF14:
+ 488 0055 433A 5C77 		.string	"C:\\workspace\\AVRcam\\MainController"
+ 488      6F72 6B73 
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccpPUVBF.s 			page 14
+
+
+ 488      7061 6365 
+ 488      5C41 5652 
+ 488      6361 6D5C 
+ 489               	.LASF2:
+ 490 0078 756E 7369 		.string	"unsigned int"
+ 490      676E 6564 
+ 490      2069 6E74 
+ 490      00
+ 491               	.LASF6:
+ 492 0085 6C6F 6E67 		.string	"long long unsigned int"
+ 492      206C 6F6E 
+ 492      6720 756E 
+ 492      7369 676E 
+ 492      6564 2069 
+ 493               	.LASF15:
+ 494 009c 7569 6E74 		.string	"uint8_t"
+ 494      385F 7400 
+ 495               	.LASF8:
+ 496 00a4 7369 7A65 		.string	"sizetype"
+ 496      7479 7065 
+ 496      00
+ 497               	.LASF5:
+ 498 00ad 6C6F 6E67 		.string	"long long int"
+ 498      206C 6F6E 
+ 498      6720 696E 
+ 498      7400 
+ 499               	.LASF11:
+ 500 00bb 636F 6C6F 		.string	"colorMap"
+ 500      724D 6170 
+ 500      00
+ 501               	.LASF16:
+ 502 00c4 4361 6D49 		.string	"CamInt_init"
+ 502      6E74 5F69 
+ 502      6E69 7400 
+ 503               	.LASF12:
+ 504 00d0 474E 5520 		.string	"GNU C11 5.4.0 -mn-flash=1 -mno-skip-bug -mmcu=avr4 -g -O1 -funsigned-char -funsigned-bitf
+ 504      4331 3120 
+ 504      352E 342E 
+ 504      3020 2D6D 
+ 504      6E2D 666C 
+ 505               	.LASF18:
+ 506 014b 6565 7072 		.string	"eeprom_read_block"
+ 506      6F6D 5F72 
+ 506      6561 645F 
+ 506      626C 6F63 
+ 506      6B00 
+ 507               	.LASF3:
+ 508 015d 6C6F 6E67 		.string	"long int"
+ 508      2069 6E74 
+ 508      00
+ 509               	.LASF7:
+ 510 0166 6C6F 6E67 		.string	"long double"
+ 510      2064 6F75 
+ 510      626C 6500 
+ 511               	.LASF0:
+ 512 0172 7369 676E 		.string	"signed char"
+ 512      6564 2063 
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccpPUVBF.s 			page 15
+
+
+ 512      6861 7200 
+ 513               	.LASF13:
+ 514 017e 4361 6D49 		.string	"CamInterface.c"
+ 514      6E74 6572 
+ 514      6661 6365 
+ 514      2E63 00
+ 515               		.ident	"GCC: (AVR_8_bit_GNU_Toolchain_3.6.0_1734) 5.4.0"
+ 516               	.global __do_clear_bss
+GAS LISTING C:\Users\Joe\AppData\Local\Temp\ccpPUVBF.s 			page 16
+
+
+DEFINED SYMBOLS
+                            *ABS*:00000000 CamInterface.c
+C:\Users\Joe\AppData\Local\Temp\ccpPUVBF.s:2      *ABS*:0000003e __SP_H__
+C:\Users\Joe\AppData\Local\Temp\ccpPUVBF.s:3      *ABS*:0000003d __SP_L__
+C:\Users\Joe\AppData\Local\Temp\ccpPUVBF.s:4      *ABS*:0000003f __SREG__
+C:\Users\Joe\AppData\Local\Temp\ccpPUVBF.s:5      *ABS*:00000000 __tmp_reg__
+C:\Users\Joe\AppData\Local\Temp\ccpPUVBF.s:6      *ABS*:00000001 __zero_reg__
+C:\Users\Joe\AppData\Local\Temp\ccpPUVBF.s:12     .text:00000000 CamInt_init
+C:\Users\Joe\AppData\Local\Temp\ccpPUVBF.s:109    .noinit:00000000 colorMap
+C:\Users\Joe\AppData\Local\Temp\ccpPUVBF.s:91     .text:0000005e CamInt_resetCam
+                            *COM*:000000b0 previousLineBuffer
+                            *COM*:000000b0 currentLineBuffer
+
+UNDEFINED SYMBOLS
+eeprom_read_block
+__do_clear_bss
