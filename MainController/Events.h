@@ -3,7 +3,7 @@
 
 /*
     Copyright (C) 2004    John Orlando
-    
+
    AVRcam: a small real-time image processing engine.
 
     This program is free software; you can redistribute it and/or
@@ -26,18 +26,18 @@
 
    or go to www.jrobot.net for more details regarding the system.
 */
-/*********************************************************** 
+/***********************************************************
 	Module Name: Events.h
 	Module Date: 05/23/2004
 	Module Auth: John Orlando
-	
+
 	Description: This file provides the external interface
 	to the events that can be published/processed in the
 	system.  It is specifically by itself (and nothing
 	else should be defined in here) so that both .c and
 	.S (assembly) files can include this file without
 	a problem.
-    
+
     Revision History:
     Date        Rel Ver.    Notes
     4/10/2004      0.1     Module created
@@ -72,7 +72,7 @@ between lines of tracking data */
 
 /* This is needed for the event fifo */
 #define EXEC_EVENT_FIFO_SIZE 8
-#define EXEC_EVENT_FIFO_MASK EXEC_EVENT_FIFO_SIZE-1 
+#define EXEC_EVENT_FIFO_MASK EXEC_EVENT_FIFO_SIZE-1
 
 #endif
 

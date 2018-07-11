@@ -1,6 +1,6 @@
 /*
     Copyright (C) 2004    John Orlando
-    
+
    AVRcam: a small real-time image processing engine.
 
     This program is free software; you can redistribute it and/or
@@ -27,13 +27,13 @@
 	Module Name: DebugInterface.c
 	Module Date: 04/15/2004
 	Module Auth: John Orlando
-	
+
 	Description: This module is responsible for providing a
 	debug interface to the system.  Currently, the only
 	debugging that is available is through the on-board
 	UART (which is used by the main application as well) in
 	addition to the LED hooked up at PORTD bit 6.
-    
+
     Revision History:
     Date        Rel Ver.    Notes
     4/10/2004      0.1     Module created
@@ -58,21 +58,21 @@
 	Function Name: DebugInt_init
 	Function Description: This function is responsible for
 	initializing the debug module.  It sets up the debug LED
-	as well as any other debugging that will be done.  The 
+	as well as any other debugging that will be done.  The
     LED blinks four times, which indicates to the user
-    that the system is available for re-programming if 
+    that the system is available for re-programming if
     necessary.  This works because the data lines on the
     OV6620 are still tri-stated at this point, but won't
     be for long after this function returns.
 	Inputs:  none
 	Outputs: none
-***********************************************************/	
+***********************************************************/
 void DebugInt_init(void)
 {
-	/* set PortD pin6 for output */
-	DDRD  |= 0x40;
-	/* turn on LED */
-	PORTD |= 0x40;
+    /* set PortD pin6 for output */
+    DDRD  |= 0x40;
+    /* turn on LED */
+    PORTD |= 0x40;
     Utility_delay(500);
     PORTD &= 0xBF;
     Utility_delay(500);

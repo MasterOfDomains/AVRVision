@@ -3,7 +3,7 @@
 
 /*
     Copyright (C) 2004    John Orlando
-    
+
    AVRcam: a small real-time image processing engine.
 
     This program is free software; you can redistribute it and/or
@@ -31,10 +31,10 @@
 	Module Name: Executive.h
 	Module Date: 04/12/2004
 	Module Auth: John Orlando
-	
+
 	Description: This file provides the external interface
 	to the Executive module.
-    
+
     Revision History:
     Date        Rel Ver.    Notes
     4/10/2004      0.1     Module created
@@ -47,7 +47,7 @@
 
 #define PUBLISH_EVENT(event) Exec_writeEventFifo(event)
 #define PUBLISH_FAST_EVENT(event) fastEventBitmask |= event
-	
+
 /* Extern Functions */
 extern void Exec_run(void);
 extern void Exec_writeEventFifo(unsigned char event);
@@ -57,8 +57,8 @@ extern unsigned char fastEventBitmask;
 extern unsigned char Exec_eventFifo[];
 extern unsigned char Exec_eventFifoHead;
 extern unsigned char Exec_eventFifoTail;
-	
-#endif	
+
+#endif
 
 
 

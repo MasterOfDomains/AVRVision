@@ -3,7 +3,7 @@
 
 /*
     Copyright (C) 2004    John Orlando
-    
+
    AVRcam: a small real-time image processing engine.
 
     This program is free software; you can redistribute it and/or
@@ -30,11 +30,11 @@
 	Module Name: CommonDefs.h
 	Module Date: 04/10/2004
 	Module Auth: John Orlando
-	
+
 	Description: This module provides some of the generic
-	definitions and declarations needed by the AVRcam 
+	definitions and declarations needed by the AVRcam
 	system.
-    
+
     Revision History:
     Date        Rel Ver.    Notes
     4/10/2004      0.1     Module created
@@ -44,9 +44,9 @@
                            for when the OV6620 is providing
                            the mega8's clock source.
 ***********************************************************/
- 
+
 #include <avr/interrupt.h>
-	
+
 /*  Defines  */
 /* 	FOSC defines the frequency of the crystal connected to
 	the mega8, supplying the instruction clock cycle */
@@ -55,11 +55,11 @@
 /* For defining boolean operations */
 typedef unsigned char bool_t;
 #define TRUE  1
-#define FALSE 0 
+#define FALSE 0
 
 #define BIT0 0
 #define BIT1 1
-#define BIT2 2 
+#define BIT2 2
 #define BIT3 3
 #define BIT4 4
 #define BIT5 5
@@ -76,6 +76,6 @@ typedef unsigned char bool_t;
 //#define DEBUG_COLOR_MAP 1
 #define COMPLETE_COLOR_MAP 1
 #define NO_CRYSTAL 1
-	
-#endif	
+
+#endif
 

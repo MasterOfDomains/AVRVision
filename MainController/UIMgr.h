@@ -3,7 +3,7 @@
 
 /*
     Copyright (C) 2004    John Orlando
-    
+
    AVRcam: a small real-time image processing engine.
 
     This program is free software; you can redistribute it and/or
@@ -30,10 +30,10 @@
 	Module Name: UIMgr.h
 	Module Date: 04/10/2004
 	Module Auth: John Orlando
-	
+
 	Description: This file provides the external interface
 	to the UI Mgr.
-    
+
     Revision History:
     Date        Rel Ver.    Notes
     4/10/2004      0.1     Module created
@@ -43,8 +43,8 @@
 
 
 /* Defines */
-#define UI_MGR_RX_FIFO_SIZE 32 
-#define UI_MGR_RX_FIFO_MASK UI_MGR_RX_FIFO_SIZE-1 
+#define UI_MGR_RX_FIFO_SIZE 32
+#define UI_MGR_RX_FIFO_MASK UI_MGR_RX_FIFO_SIZE-1
 
 #define UI_MGR_TX_FIFO_SIZE 64
 #define UI_MGR_TX_FIFO_MASK UI_MGR_TX_FIFO_SIZE-1
@@ -69,6 +69,6 @@ extern void UIMgr_transmitPendingData(void);
 extern void UIMgr_dispatchEvent(unsigned char event);
 extern void UIMgr_flushTxBuffer(void);
 extern void UIMgr_writeTxFifo(unsigned char data);
-	
-#endif	
+
+#endif
 

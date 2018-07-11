@@ -1,6 +1,6 @@
 /*
     Copyright (C) 2004    John Orlando
-    
+
    AVRcam: a small real-time image processing engine.
 
     This program is free software; you can redistribute it and/or
@@ -27,11 +27,11 @@
 	Module Name: Utility.c
 	Module Date: 04/13/2004
 	Module Auth: John Orlando
-	
+
 	Description: This module provides a basic set of
 	general purpose utilities that can be used by any
 	module needing them.
-    
+
     Revision History:
     Date        Rel Ver.    Notes
     4/10/2004      0.1     Module created
@@ -60,19 +60,17 @@
 	in avr/delay.h provide accurate 3 and 4 cycle delay loops
 	if needed...this isn't really a millisecond, so DON'T
     depend on it for exact timing...
-***********************************************************/	
+***********************************************************/
 void Utility_delay(unsigned short numMs)
 {
-	volatile unsigned short i=0,j=0;
+    volatile unsigned short i=0,j=0;
 #ifndef SIMULATION
-	for (i=0; i<numMs; i++)
-	{
-		for (j=0; j<1000; j++)
-		{
-			asm volatile("nop"::);
-		}
-	}
-#endif	
+    for (i=0; i<numMs; i++) {
+        for (j=0; j<1000; j++) {
+            asm volatile("nop"::);
+        }
+    }
+#endif
 }
 
 

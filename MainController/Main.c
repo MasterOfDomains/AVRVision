@@ -1,6 +1,6 @@
 /*
     Copyright (C) 2004    John Orlando
-    
+
    AVRcam: a small real-time image processing engine.
 
     This program is free software; you can redistribute it and/or
@@ -27,10 +27,10 @@
 	Module Name: Main.c
 	Module Date: 04/10/2004
 	Module Auth: John Orlando
-	 
-	Description:  This module is responsible for providing 
+
+	Description:  This module is responsible for providing
 	the entry point to the code through the "main" function.
-    
+
     Revision History:
     Date        Rel Ver.    Notes
     4/10/2004      0.1     Module created
@@ -43,14 +43,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include "UIMgr.h"
-#include "UartInterface.h" 
+#include "UartInterface.h"
 #include "I2CInterface.h"
 #include "CamInterface.h"
 #include "DebugInterface.h"
 #include "FrameMgr.h"
-#include "CommonDefs.h" 
-#include "CamConfig.h" 
-#include "Executive.h" 
+#include "CommonDefs.h"
+#include "CamConfig.h"
+#include "Executive.h"
 #include "Utility.h"
 
 /* 	Local Structures and Typedefs */
@@ -65,43 +65,34 @@
 	point into AVRcam application.
 	Inputs:  none
 	Outputs: int
-***********************************************************/	
+***********************************************************/
 int main(void)
 {
-	/* initialize all of the interface modules */
-	/* turn on LED */
-	PORTD |= 0x40;
-	Utility_delay(1000);
-	PORTD = 0;
-	Utility_delay(1000);
-	PORTD |= 0x40;
-	Utility_delay(1000);
-	PORTD = 0;
-	Utility_delay(1000);
-	
-	DebugInt_init();
-	UartInt_init();
-	I2CInt_init();
-	CamInt_init();
-	
-	/* initialize the remaining modules that will process
-	data...interrupts need to be on for these */
-	ENABLE_INTS();
-	CamConfig_init(); 
-	UIMgr_init();
-	FrameMgr_init();
-    
-	/* provide a short delay for the camera to stabilize before
-	we let the executive start up */
-	Utility_delay(1000);
-	PORTD &= ~(1UL << PD6);
-	Utility_delay(3000);
+    /* initialize all of the interface modules */
 
-	/* the rest of the application will be under the
-	control of the Executive.  */
-	Exec_run();	
-	
-	/* this should never be reached */
-	return(0);
+    DebugInt_init();
+    UartInt_init();
+    I2CInt_init();
+    CamInt_init();
+
+    /* initialize the remaining modules that will process
+    data...interrupts need to be on for these */
+    ENABLE_INTS();
+    CamConfig_init();
+    UIMgr_init();
+    FrameMgr_init();
+
+    /* provide a short delay for the camera to stabilize before
+    we let the executive start up */
+    Utility_delay(1000);
+    PORTD &= ~(1UL << PD6);
+    Utility_delay(3000);
+
+    /* the rest of the application will be under the
+    control of the Executive.  */
+    Exec_run();
+
+    /* this should never be reached */
+    return(0);
 }
 

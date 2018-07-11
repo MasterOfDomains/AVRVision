@@ -3,7 +3,7 @@
 
 /*
     Copyright (C) 2004    John Orlando
-    
+
    AVRcam: a small real-time image processing engine.
 
     This program is free software; you can redistribute it and/or
@@ -30,10 +30,10 @@
 	Module Name: CamInterface.h
 	Module Date: 04/14/2004
 	Module Auth: John Orlando
-	
+
 	Description: This file is responsible for providing the
 	external interface to the CamInterface module.
-    
+
     Revision History:
     Date        Rel Ver.    Notes
     4/10/2004      0.1     Module created
@@ -69,7 +69,7 @@ extern unsigned char currentLineBuffer[];
 extern unsigned char previousLineBuffer[];
 extern unsigned char colorMap[];
 extern unsigned char frameCount;
-	
+
 /* Extern functions */
 extern void CamInt_init(void);
 extern void CamInt_resetCam(void);
@@ -77,6 +77,6 @@ extern void CamInt_waitForNewDumpFrame(void);
 extern void CamInt_waitForNewTrackingFrame(void);
 extern void CamInt_acquireTrackingLine(void);
 extern void CamInt_acquireDumpLine(void);
-	
-#endif	
+
+#endif
 

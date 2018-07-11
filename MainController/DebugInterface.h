@@ -3,7 +3,7 @@
 
 /*
     Copyright (C) 2004    John Orlando
-    
+
    AVRcam: a small real-time image processing engine.
 
     This program is free software; you can redistribute it and/or
@@ -30,10 +30,10 @@
 	Module Name: DebugInterface.h
 	Module Date: 04/15/2004
 	Module Auth: John Orlando
-	
+
 	Description: This file is responsible for providing the
 	external interface to the DebugInterface module.
-    
+
     Revision History:
     Date        Rel Ver.    Notes
     4/10/2004      0.1     Module created
@@ -43,6 +43,6 @@
 
 /* Extern Functions */
 extern void DebugInt_init(void);
-	
-#endif	
+
+#endif
 

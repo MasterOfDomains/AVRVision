@@ -3,7 +3,7 @@
 
 /*
     Copyright (C) 2004    John Orlando
-    
+
    AVRcam: a small real-time image processing engine.
 
     This program is free software; you can redistribute it and/or
@@ -30,10 +30,10 @@
 	Module Name: CamConfig.h
 	Module Date: 04/12/2004
 	Module Auth: John Orlando
-	
+
 	Description: This file provides the external interface
 	to the CamConfig module.
-    
+
     Revision History:
     Date        Rel Ver.    Notes
     4/10/2004      0.1     Module created
@@ -42,15 +42,15 @@
 ***********************************************************/
 
 #include "I2CInterface.h"
-	
+
 /* This is the I2C slave address of the OV6620 module.
 NOTE: The actual address of the camera is 0xC0.  However,
 the TWI interface on the mega8 needs to have the address
 shifted one bit to the right, which yields 0x60.  The
-LSB is used to set whether the operation is read or 
+LSB is used to set whether the operation is read or
 write. */
-#define CAM_ADDRESS 0x60	
-	
+#define CAM_ADDRESS 0x60
+
 extern i2cCmd_t CamConfig_txFifo[];
 extern unsigned char 	CamConfig_txFifoHead;
 extern unsigned char 	CamConfig_txFifoTail;
@@ -60,6 +60,6 @@ extern void  	CamConfig_init(void);
 extern bool_t 	CamConfig_writeTxFifo(i2cCmd_t cmd);
 extern void  	CamConfig_setCamReg(unsigned char reg, unsigned char val);
 extern void  	CamConfig_sendFifoCmds(void);
-	
-#endif	
+
+#endif
 

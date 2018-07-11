@@ -3,7 +3,7 @@
 
 /*
     Copyright (C) 2004    John Orlando
-    
+
    AVRcam: a small real-time image processing engine.
 
     This program is free software; you can redistribute it and/or
@@ -30,10 +30,10 @@
 	Module Name: FrameMgr.h
 	Module Date: 04/10/2004
 	Module Auth: John Orlando
-	
+
 	Description: This module provides the external interface
 	to the FrameMgr module.
-    
+
     Revision History:
     Date        Rel Ver.    Notes
     4/10/2004      0.1     Module created
@@ -43,8 +43,8 @@
 
 /* Extern Variables */
 extern unsigned char testLineCount;
-	
-	
+
+
 /* External Function Declarations */
 extern void FrameMgr_init(void);
 extern void FrameMgr_processLine(void);
@@ -53,6 +53,6 @@ extern void FrameMgr_acquireLine(void);
 extern void FrameMgr_acquireFrame(void);
 extern void FrameMgr_dispatchEvent(unsigned char event);
 
-	
-#endif	
+
+#endif
 

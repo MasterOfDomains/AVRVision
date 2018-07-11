@@ -3,7 +3,7 @@
 
 /*
     Copyright (C) 2004    John Orlando
-    
+
    AVRcam: a small real-time image processing engine.
 
     This program is free software; you can redistribute it and/or
@@ -30,23 +30,23 @@
 	Module Name: UartInterface.h
 	Module Date: 04/10/2004
 	Module Auth: John Orlando
-	
+
 	Description: This modules provides the external interface
-	to the UartInterface module.  
-    
+	to the UartInterface module.
+
     Revision History:
     Date        Rel Ver.    Notes
     4/10/2004      0.1     Module created
     6/30/2004      1.0     Initial release for Circuit Cellar
                            contest.
 ***********************************************************/
-	
+
 /* extern variables */
 extern unsigned char serialReceivedFlag;
 
 /* External Function Prototypes */
 extern void UartInt_init(void);
-extern void UartInt_txByte(unsigned char txByte); 
-	
-#endif	
+extern void UartInt_txByte(unsigned char txByte);
+
+#endif
 

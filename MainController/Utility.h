@@ -3,7 +3,7 @@
 
 /*
     Copyright (C) 2004    John Orlando
-    
+
    AVRcam: a small real-time image processing engine.
 
     This program is free software; you can redistribute it and/or
@@ -30,19 +30,19 @@
 	Module Name: Utility.h
 	Module Date: 04/13/2004
 	Module Auth: John Orlando
-	
+
 	Description: This file provides the external interface
-	to the Utility module. 
-    
+	to the Utility module.
+
     Revision History:
     Date        Rel Ver.    Notes
     4/10/2004      0.1     Module created
     6/30/2004      1.0     Initial release for Circuit Cellar
                            contest.
 ***********************************************************/
-	
+
 /*  Extern Functions  */
 extern void Utility_delay(unsigned short numMs);
-	
-#endif	
+
+#endif
 
